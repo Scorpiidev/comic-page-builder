@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Service
+ServiceTypes=Krita/PythonPlugin
+X-KDE-Library=comicpagebuilder
+X-Krita-Manual=Manual.html
+Name=Comic Page Builder
+Comment=Generate comic pages with panel layouts, crop marks and bleed guides

@@ -1,0 +1,22 @@
+{
+    "layout" : [
+        {
+            "type" : "rect",
+            "data" : {
+                "x" : 0,
+                "y" : 0,
+                "width" : 1.0,
+                "height" : 0.66
+            }
+        },
+        {
+            "type" : "rect",
+            "data" : {
+                "x" : 0,
+                "y" : 0.68,
+                "width" : 1.0,
+                "height" : 0.32
+            }
+        }
+    ]
+}

@@ -1,0 +1,50 @@
+{
+    "layout" : [
+        {
+            "type" : "rect",
+            "data" : {
+                "x" : 0.68,
+                "y" : 0,
+                "width" : 0.32,
+                "height" : 0.48
+            }
+        },
+        {
+            "type" : "rect",
+            "data" : {
+                "x" : 0.34,
+                "y" : 0,
+                "width" : 0.32,
+                "height" : 0.48
+            }
+        },
+        {
+            "type" : "rect",
+            "data" : {
+                "x" : 0,
+                "y" : 0,
+                "width" : 0.32,
+                "height" : 0.48
+            }
+        },
+        {
+            "type" : "rect",
+            "data" : {
+                "x" : 0,
+                "y" : 0.5,
+                "width" : 1,
+                "height" : 0.24
+            }
+        },
+
+        {
+            "type" : "rect",
+            "data" : {
+                "x" : 0,
+                "y" : 0.76,
+                "width" : 1,
+                "height" : 0.24
+            }
+        }
+    ]
+}

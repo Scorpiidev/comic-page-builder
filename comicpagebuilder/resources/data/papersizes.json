@@ -1,0 +1,58 @@
+[
+    {
+        "name" : "Commercial",
+        "width" : 220,
+        "height" : 310
+    },
+    {
+        "name" : "ISO A3",
+        "width" : 297,
+        "height" : 420
+    },
+    {
+        "name" : "ISO A4",
+        "width" : 210,
+        "height" : 297
+    },
+    {
+        "name" : "ISO A5",
+        "width" : 148,
+        "height" : 210
+    },
+    {
+        "name" : "ISO B3",
+        "width" : 353,
+        "height" : 500
+    },
+    {
+        "name" : "ISO B4",
+        "width" : 250,
+        "height" : 353
+    },
+    {
+        "name" : "ISO B5",
+        "width" : 176,
+        "height" : 250
+    },
+    {
+        "name" : "JIS B3",
+        "width" : 364,
+        "height" : 515
+    },
+    {
+        "name" : "JIS B4",
+        "width" : 257,
+        "height" : 364
+    },
+    {
+        "name" : "JIS B5",
+        "width" : 182,
+        "height" : 257
+    },
+    {
+        "name" : "Postcard",
+        "width" : 100,
+        "height" : 148
+    }
+]
+

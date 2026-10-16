@@ -1,0 +1,32 @@
+{
+    "tags" : ["Title"],
+    "layout" : [
+        {
+            "type" : "rect",
+            "data" : {
+                "x" : 0,
+                "y" : 0,
+                "width" : 1,
+                "height" : 0.16
+            }
+        },
+        {
+            "type" : "rect",
+            "data" : {
+                "x" : 0.51,
+                "y" : 0.18,
+                "width" : 0.49,
+                "height" : 0.82
+            }
+        },
+        {
+            "type" : "rect",
+            "data" : {
+                "x" : 0,
+                "y" : 0.18,
+                "width" : 0.49,
+                "height" : 0.82
+            }
+        }
+    ]
+}
