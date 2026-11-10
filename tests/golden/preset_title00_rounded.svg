@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:cpb="https://github.com/Scorpiidev/comic-page-builder/ns/1" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" width="174mm" height="266mm" viewBox="0 0 174 266" cpb:format="cpb-page" cpb:version="1" cpb:page="1" cpb:trim-w="168" cpb:trim-h="260" cpb:bleed="3" cpb:safe="5" cpb:margin="8" cpb:dpi="600">
+  <defs>
+    <clipPath id="cpb-clip-1">
+      <path d="M12.5 11H161.5A1.5 1.5 0 0 1 163 12.5V34.84A1.5 1.5 0 0 1 161.5 36.34H12.5A1.5 1.5 0 0 1 11 34.84V12.5A1.5 1.5 0 0 1 12.5 11Z" />
+    </clipPath>
+    <clipPath id="cpb-clip-2">
+      <path d="M12.5 39.34H109.84A1.5 1.5 0 0 1 111.34 40.84V137.32A1.5 1.5 0 0 1 109.84 138.82H12.5A1.5 1.5 0 0 1 11 137.32V40.84A1.5 1.5 0 0 1 12.5 39.34Z" />
+    </clipPath>
+    <clipPath id="cpb-clip-3">
+      <path d="M115.84 39.34H161.5A1.5 1.5 0 0 1 163 40.84V159.28A1.5 1.5 0 0 1 161.5 160.78H115.84A1.5 1.5 0 0 1 114.34 159.28V40.84A1.5 1.5 0 0 1 115.84 39.34Z" />
+    </clipPath>
+    <clipPath id="cpb-clip-4">
+      <path d="M12.5 141.82H109.84A1.5 1.5 0 0 1 111.34 143.32V191A1.5 1.5 0 0 1 109.84 192.5H12.5A1.5 1.5 0 0 1 11 191V143.32A1.5 1.5 0 0 1 12.5 141.82Z" />
+    </clipPath>
+    <clipPath id="cpb-clip-5">
+      <path d="M115.84 163.78H161.5A1.5 1.5 0 0 1 163 165.28V253.5A1.5 1.5 0 0 1 161.5 255H115.84A1.5 1.5 0 0 1 114.34 253.5V165.28A1.5 1.5 0 0 1 115.84 163.78Z" />
+    </clipPath>
+    <clipPath id="cpb-clip-6">
+      <path d="M12.5 195.5H109.84A1.5 1.5 0 0 1 111.34 197V253.5A1.5 1.5 0 0 1 109.84 255H12.5A1.5 1.5 0 0 1 11 253.5V197A1.5 1.5 0 0 1 12.5 195.5Z" />
+    </clipPath>
+  </defs>
+  <g id="cpb-paper" inkscape:groupmode="layer" inkscape:label="Paper">
+    <rect id="cpb-paper-fill" x="0" y="0" width="174" height="266" fill="#ffffff" />
+  </g>
+  <g id="cpb-panels" inkscape:groupmode="layer" inkscape:label="Panels" cpb:gutter="3" cpb:reading="ltr" cpb:radius="1.5" cpb:layout="{&quot;kind&quot;:&quot;preset&quot;,&quot;name&quot;:&quot;title00&quot;}">
+    <path id="cpb-panel-1" cpb:index="1" cpb:cell="0 0 1 0.11" d="M12.5 11H161.5A1.5 1.5 0 0 1 163 12.5V34.84A1.5 1.5 0 0 1 161.5 36.34H12.5A1.5 1.5 0 0 1 11 34.84V12.5A1.5 1.5 0 0 1 12.5 11Z" fill="none" stroke="#3d1f2e" stroke-width="0.6" stroke-linejoin="miter" />
+    <path id="cpb-panel-2" cpb:index="2" cpb:cell="0 0.11 0.67 0.42" d="M12.5 39.34H109.84A1.5 1.5 0 0 1 111.34 40.84V137.32A1.5 1.5 0 0 1 109.84 138.82H12.5A1.5 1.5 0 0 1 11 137.32V40.84A1.5 1.5 0 0 1 12.5 39.34Z" fill="none" stroke="#3d1f2e" stroke-width="0.6" stroke-linejoin="miter" />
+    <path id="cpb-panel-3" cpb:index="3" cpb:cell="0.67 0.11 0.33 0.51" d="M115.84 39.34H161.5A1.5 1.5 0 0 1 163 40.84V159.28A1.5 1.5 0 0 1 161.5 160.78H115.84A1.5 1.5 0 0 1 114.34 159.28V40.84A1.5 1.5 0 0 1 115.84 39.34Z" fill="none" stroke="#3d1f2e" stroke-width="0.6" stroke-linejoin="miter" />
+    <path id="cpb-panel-4" cpb:index="4" cpb:cell="0 0.53 0.67 0.22" d="M12.5 141.82H109.84A1.5 1.5 0 0 1 111.34 143.32V191A1.5 1.5 0 0 1 109.84 192.5H12.5A1.5 1.5 0 0 1 11 191V143.32A1.5 1.5 0 0 1 12.5 141.82Z" fill="none" stroke="#3d1f2e" stroke-width="0.6" stroke-linejoin="miter" />
+    <path id="cpb-panel-5" cpb:index="5" cpb:cell="0.67 0.62 0.33 0.38" d="M115.84 163.78H161.5A1.5 1.5 0 0 1 163 165.28V253.5A1.5 1.5 0 0 1 161.5 255H115.84A1.5 1.5 0 0 1 114.34 253.5V165.28A1.5 1.5 0 0 1 115.84 163.78Z" fill="none" stroke="#3d1f2e" stroke-width="0.6" stroke-linejoin="miter" />
+    <path id="cpb-panel-6" cpb:index="6" cpb:cell="0 0.75 0.67 0.25" d="M12.5 195.5H109.84A1.5 1.5 0 0 1 111.34 197V253.5A1.5 1.5 0 0 1 109.84 255H12.5A1.5 1.5 0 0 1 11 253.5V197A1.5 1.5 0 0 1 12.5 195.5Z" fill="none" stroke="#3d1f2e" stroke-width="0.6" stroke-linejoin="miter" />
+  </g>
+  <g id="cpb-letters" inkscape:groupmode="layer" inkscape:label="Letters" />
+  <g id="cpb-guides" inkscape:groupmode="layer" inkscape:label="Guides" cpb:print="false">
+    <path id="cpb-trim" d="M3 3H171V263H3Z" stroke="#8a8a8f" stroke-dasharray="2 1.4" fill="none" stroke-width="0.25" />
+    <path id="cpb-safe" d="M8 8H166V258H8Z" stroke="#00a6d6" stroke-dasharray="1.4 1.2" fill="none" stroke-width="0.25" />
+    <path id="cpb-crop-marks" d="M3 2V0.2M2 3H0.2M3 264V265.8M2 263H0.2M171 2V0.2M172 3H173.8M171 264V265.8M172 263H173.8" stroke="#1b1b1b" fill="none" stroke-width="0.25" />
+  </g>
+</svg>

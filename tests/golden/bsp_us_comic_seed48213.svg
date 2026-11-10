@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:cpb="https://github.com/Scorpiidev/comic-page-builder/ns/1" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" width="174mm" height="266mm" viewBox="0 0 174 266" cpb:format="cpb-page" cpb:version="1" cpb:page="7" cpb:trim-w="168" cpb:trim-h="260" cpb:bleed="3" cpb:safe="5" cpb:margin="8" cpb:dpi="600">
+  <defs>
+    <clipPath id="cpb-clip-1">
+      <path d="M11 11H85.5V90.833H11Z" />
+    </clipPath>
+    <clipPath id="cpb-clip-2">
+      <path d="M88.5 11H163V90.833H88.5Z" />
+    </clipPath>
+    <clipPath id="cpb-clip-3">
+      <path d="M11 93.833H85.5V199.278H11Z" />
+    </clipPath>
+    <clipPath id="cpb-clip-4">
+      <path d="M88.5 93.833H163V199.278H88.5Z" />
+    </clipPath>
+    <clipPath id="cpb-clip-5">
+      <path d="M11 202.278H85.5V255H11Z" />
+    </clipPath>
+    <clipPath id="cpb-clip-6">
+      <path d="M88.5 202.278H163V255H88.5Z" />
+    </clipPath>
+  </defs>
+  <g id="cpb-paper" inkscape:groupmode="layer" inkscape:label="Paper">
+    <rect id="cpb-paper-fill" x="0" y="0" width="174" height="266" fill="#ffffff" />
+  </g>
+  <g id="cpb-panels" inkscape:groupmode="layer" inkscape:label="Panels" cpb:gutter="3" cpb:reading="ltr" cpb:radius="0" cpb:layout="{&quot;kind&quot;:&quot;bsp&quot;,&quot;mode&quot;:&quot;auto&quot;,&quot;panels&quot;:6,&quot;seed&quot;:48213,&quot;snap&quot;:true}">
+    <path id="cpb-panel-1" cpb:index="1" cpb:cell="0 0 0.5 0.333333" d="M11 11H85.5V90.833H11Z" fill="none" stroke="#1b1b1b" stroke-width="0.6" stroke-linejoin="miter" />
+    <path id="cpb-panel-2" cpb:index="2" cpb:cell="0.5 0 0.5 0.333333" d="M88.5 11H163V90.833H88.5Z" fill="none" stroke="#1b1b1b" stroke-width="0.6" stroke-linejoin="miter" />
+    <path id="cpb-panel-3" cpb:index="3" cpb:cell="0 0.333333 0.5 0.444444" d="M11 93.833H85.5V199.278H11Z" fill="none" stroke="#1b1b1b" stroke-width="0.6" stroke-linejoin="miter" />
+    <path id="cpb-panel-4" cpb:index="4" cpb:cell="0.5 0.333333 0.5 0.444444" d="M88.5 93.833H163V199.278H88.5Z" fill="none" stroke="#1b1b1b" stroke-width="0.6" stroke-linejoin="miter" />
+    <path id="cpb-panel-5" cpb:index="5" cpb:cell="0 0.777778 0.5 0.222222" d="M11 202.278H85.5V255H11Z" fill="none" stroke="#1b1b1b" stroke-width="0.6" stroke-linejoin="miter" />
+    <path id="cpb-panel-6" cpb:index="6" cpb:cell="0.5 0.777778 0.5 0.222222" d="M88.5 202.278H163V255H88.5Z" fill="none" stroke="#1b1b1b" stroke-width="0.6" stroke-linejoin="miter" />
+  </g>
+  <g id="cpb-letters" inkscape:groupmode="layer" inkscape:label="Letters" />
+  <g id="cpb-guides" inkscape:groupmode="layer" inkscape:label="Guides" cpb:print="false">
+    <path id="cpb-trim" d="M3 3H171V263H3Z" stroke="#8a8a8f" stroke-dasharray="2 1.4" fill="none" stroke-width="0.25" />
+    <path id="cpb-safe" d="M8 8H166V258H8Z" stroke="#00a6d6" stroke-dasharray="1.4 1.2" fill="none" stroke-width="0.25" />
+    <path id="cpb-crop-marks" d="M3 2V0.2M2 3H0.2M3 264V265.8M2 263H0.2M171 2V0.2M172 3H173.8M171 264V265.8M172 263H173.8" stroke="#1b1b1b" fill="none" stroke-width="0.25" />
+  </g>
+</svg>

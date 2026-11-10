@@ -35,6 +35,18 @@ python -m pip install pytest
 python -m pytest
 ```
 
+The core can already build pages as SVG from the command line (run from the repository root):
+
+```
+PYTHONPATH=core python -m cpb_core papers
+PYTHONPATH=core python -m cpb_core build page_07.svg --paper "US Comic" --panels 6 --seed 48213
+PYTHONPATH=core python -m cpb_core build cover.svg --layout preset --preset title00 --radius 1.5
+PYTHONPATH=core python -m cpb_core batch Pages --count 8 --min-panels 4 --max-panels 6
+PYTHONPATH=core python -m cpb_core info page_07.svg
+```
+
+On Windows PowerShell, set the path first with `$env:PYTHONPATH="core"`.
+
 The 0.13 plugin in `comicpagebuilder/` keeps working while the rewrite happens beside it.
 
 ## Credits

@@ -1,6 +1,6 @@
 # Comic Pipeline: Design Doc
 
-**Status:** M0 done (core skeleton + tests). Decisions D6–D9 come from the clickable prototype.
+**Status:** M0 and M1 done (core, page.svg writer/reader, command line). Decisions D6–D9 come from the clickable prototype.
 **Author:** Antares
 **Last updated:** 2026-11-10
 **Prototype:** a clickable HTML prototype of the hub was used to settle the UX before building.
@@ -103,8 +103,10 @@ script copies `cpb_core` into it when packaging.
 
 ## 4. Core model
 
-Every length is stored in **mm**. They're converted to pt only when the SVG
-is written, and to px only when an importer needs pixels.
+Every length is stored in **mm**, and page.svg uses millimetres as its user
+unit too (`width="174mm"` with a matching `viewBox`), so the numbers in the
+file are the numbers in the core. Points are only used for type sizes, and
+pixels only when an importer needs a canvas size.
 
 ```python
 @dataclass
@@ -217,17 +219,36 @@ MyComic/
   `<g inkscape:groupmode="layer" inkscape:label="Panels" id="cpb-panels">`
 - Hub metadata goes in a custom namespace, so other apps ignore it:
   `xmlns:cpb="https://github.com/Scorpiidev/comic-page-builder/ns/1"`
-- Layer stack, top to bottom:
+- Layer stack, top to bottom (built in M1, see `core/cpb_core/svg/`):
 
 ```
-cpb-guides     (cpb:print="false")  safe area, trim, crop marks
-cpb-letters    balloons + text, one <g> per balloon
-cpb-panels     one <path> per panel, stroke/fill from style
+cpb-guides     (cpb:print="false")  trim, safe area, crop marks
+cpb-letters    balloons + text, one <g> per balloon (filled in by M5)
+cpb-panels     one <path> per panel, in reading order
+cpb-paper      white canvas rect, so the file previews correctly anywhere
 <defs>         one <clipPath id="cpb-clip-N"> per panel
 ```
 
-- Panels are `<path>` elements, rectangles included, so diagonal panels need
-  nothing special.
+- The root `<svg>` carries the page size: `cpb:page`, `cpb:trim-w`,
+  `cpb:trim-h`, `cpb:bleed`, `cpb:safe`, `cpb:margin`, `cpb:dpi`, plus
+  `cpb:format="cpb-page"` and `cpb:version`.
+- The Panels layer carries `cpb:gutter`, `cpb:reading` (`ltr`/`rtl`),
+  `cpb:radius` and `cpb:layout`: the recipe as JSON, for example
+  `{"kind":"bsp","mode":"auto","panels":6,"seed":48213,"snap":true}`, so a
+  locked layout can be re-flowed on a new size.
+- Each panel is a `<path id="cpb-panel-N" cpb:index="N" cpb:cell="x y w h">`.
+  `cpb:cell` is the gutter-free cell (6 decimals), which is what the reader
+  trusts. Panels are paths, rectangles included, so diagonal panels need
+  nothing special later.
+- **Ownership rule:** the hub owns exactly the elements whose `id` starts
+  with `cpb-`. Rewriting a page replaces those and nothing else; elements
+  you add (even inside a hub layer), comments and other namespaces stay.
+- **Edited elsewhere:** if a panel's `d` no longer matches what the hub
+  would draw (say you made it diagonal in Illustrator), the reader lists it
+  in `modified_panels`, so the hub can ask before redrawing it.
+- API: `page_to_svg(page)`, `write_page(page, path)`, `read_page(path)` and
+  `parse_page(text)` return a `PageDocument`; `doc.to_svg(new_page)` saves
+  edits back into the same tree.
 - Each balloon is
   `<g class="cpb-balloon" cpb:kind=… cpb:tail=… cpb:text-role=…>` containing
   one outline `<path>` and one `<text>`.
@@ -480,7 +501,7 @@ The earlier rounded "cute" token set is kept below for reference only.
 | # | Milestone | Done when |
 |---|---|---|
 | M0 ✅ | Core skeleton and pytest | geometry, layouts and BSP are ported with tests (done: 50 tests, passing on Python 3.10 and 3.13; CI runs 3.10–3.13) |
-| M1 | SVG writer and reader, page build from the command line | golden and round-trip tests pass |
+| M1 ✅ | SVG writer and reader, page build from the command line | golden and round-trip tests pass (done: `python -m cpb_core build / batch / info / papers`; 71 tests on Python 3.10 and 3.13) |
 | M2 | **Risk spike:** Photoshop and Illustrator importers, test opening the PSD in CSP | one page imports into PS and AI; CSP result written down |
 | M3 | Hub app shell in pink Aero: projects (wizard + settings), pages (add + batch), page builder | build a page from the UI |
 | M4 | Lettering advisor + calibration sheet | test print done, presets saved |
