@@ -78,9 +78,11 @@ def _split(node, axis, gutter, min_w, min_h, rng):
         return True
 
 
-def _choose_axis(node, mode, rng, gutter, min_w, min_h):
-    can_h = _can_split_h(node, gutter, min_h)
-    can_v = _can_split_v(node, gutter, min_w)
+def _choose_axis(node, mode, rng, gutter_h, gutter_w, min_w, min_h):
+    # Must use the same per-axis gutters as _split(), or we can pick an
+    # axis that _split() then rejects.
+    can_h = _can_split_h(node, gutter_h, min_h)
+    can_v = _can_split_v(node, gutter_w, min_w)
     if not can_h and not can_v: return ""
     if can_h and not can_v:     return "h"
     if can_v and not can_h:     return "v"
@@ -104,44 +106,42 @@ def generate_layout(
 
     gutter_mm is the space between panels (default 3mm).
     This is SEPARATE from line_strength (the border width).
+
+    May return fewer than n_panels rects when the minimum panel size
+    doesn't leave room for more; callers should use len() of the result.
     """
     n_panels = max(MIN_PANELS, min(MAX_PANELS, n_panels))
     rng      = random.Random(seed)
 
-    # Normalize to [0,1] space
-    min_w      = MIN_PANEL_MM_W  / binding_w_mm if binding_w_mm > 0 else 0.10
-    min_h      = MIN_PANEL_MM_H  / binding_h_mm if binding_h_mm > 0 else 0.13
-    # Use width-based normalization for horizontal gutter, height for vertical.
-    # We'll pass a single gutter value to _split; since we normalize by the
-    # relevant dimension inside each branch, use the smaller of the two.
+    # Normalize to [0,1] space. Horizontal cuts eat height, vertical cuts
+    # eat width, so each axis gets its own normalised gutter.
+    min_w    = MIN_PANEL_MM_W / binding_w_mm if binding_w_mm > 0 else 0.10
+    min_h    = MIN_PANEL_MM_H / binding_h_mm if binding_h_mm > 0 else 0.13
     gutter_w = gutter_mm / binding_w_mm if binding_w_mm > 0 else 0.014
     gutter_h = gutter_mm / binding_h_mm if binding_h_mm > 0 else 0.010
-    # _split receives gutter in the same space as the node's coordinate system.
-    # We pass gutter_h for h-splits and gutter_w for v-splits by using a
-    # wrapper that picks the right one.
-    gutter_norm = (gutter_w + gutter_h) / 2   # close enough for the constraint checks
 
     root   = _Node(0.0, 0.0, 1.0, 1.0)
     leaves = [root]
+    stuck  = set()   # ids of leaves whose split failed; never retried
 
-    for _ in range(n_panels - 1):
+    while len(leaves) < n_panels:
         splittable = [
             l for l in leaves
-            if _can_split_h(l, gutter_h, min_h) or _can_split_v(l, gutter_w, min_w)
+            if id(l) not in stuck
+            and (_can_split_h(l, gutter_h, min_h) or _can_split_v(l, gutter_w, min_w))
         ]
         if not splittable:
             break
 
         target = max(splittable, key=lambda l: l.w * l.h)
-        axis   = _choose_axis(target, cut_mode, rng, gutter_norm, min_w, min_h)
-        if not axis:
-            continue
-
-        # Use the correct gutter for the axis
-        g = gutter_h if axis == "h" else gutter_w
-        ok = _split(target, axis, g, min_w, min_h, rng)
-        if ok:
+        axis   = _choose_axis(target, cut_mode, rng, gutter_h, gutter_w, min_w, min_h)
+        g      = gutter_h if axis == "h" else gutter_w
+        if axis and _split(target, axis, g, min_w, min_h, rng):
             leaves = root.leaves()
+        else:
+            # Edge case (e.g. exactly at the size limit): move on to the
+            # next-largest leaf instead of burning a panel.
+            stuck.add(id(target))
 
     return [
         {

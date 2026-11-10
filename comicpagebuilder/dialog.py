@@ -182,15 +182,16 @@ class ComicPageBuilderDialog(QDialog):
             from .document_builder import build_document, setup_masks
             from krita import Krita
             doc = build_document(spec, layout)
+            # Scaffold BEFORE saving so the file on disk has the frame groups.
+            try:
+                setup_masks(doc)
+            except Exception:
+                pass
             if not doc.saveAs(path):
                 raise RuntimeError(f"Krita could not save to: {path}")
             win = Krita.instance().activeWindow()
             if win:
                 win.addView(doc)
-            try:
-                setup_masks(doc)
-            except Exception:
-                pass
             self._status_label.setText(f"\u2713 Saved: {os.path.basename(path)}")
         except Exception as e:
             QMessageBox.critical(self, "Save Failed", str(e))

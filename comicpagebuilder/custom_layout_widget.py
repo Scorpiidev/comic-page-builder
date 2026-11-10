@@ -505,13 +505,17 @@ class CustomLayoutWidget(QWidget):
             bw, bh = 210.0, 297.0
 
         rects  = generate_layout(n, bw, bh, gutter_mm=gutter, cut_mode=mode)
-        layout = make_layout_dict(rects, label=f"Random {n}P ({mode})")
+        got    = len(rects)   # can be < n when panels hit the minimum size
+        layout = make_layout_dict(rects, label=f"Random {got}P ({mode})")
 
         self._current_layout = layout
         self._preview_svg.load(rects_to_svg(rects, PREVIEW_W, PREVIEW_H))
-        
+
+        count_line = f"{got} panel{'s' if got != 1 else ''}"
+        if got < n:
+            count_line += f" (asked for {n}; no room for more at this page size)"
         self._preview_label.setText(
-            f"{n} panel{'s' if n != 1 else ''}\n"
+            f"{count_line}\n"
             f"Mode: {mode}\n"
             f"Gutter: {gutter}mm\n\n"
             "Happy with it?\n"
@@ -547,7 +551,7 @@ class CustomLayoutWidget(QWidget):
 
             if not rects:
                 QMessageBox.warning(self, "No Panels Found",
-                    "Could not find a 'Panels' vector layer with shapes in this document.")
+                    "Could not find a 'Panels' layer with shapes in this document.")
                 return
 
             self._save_rects(rects)

@@ -105,7 +105,7 @@ Generates panel layouts algorithmically using Binary Space Partitioning.
   - **Random Auto (BSP balanced)** — each page gets a fresh BSP auto-mode layout.
   - **Random Pure (BSP chaotic)** — each page gets a fresh BSP random-mode layout.
   - **Custom per page** — a scrollable list appears with one dropdown per page. Each page can be set to Random Auto, Random Pure, or any named preset.
-- **⚙ Generate All Pages** — creates and saves all pages to the output folder.
+- **⚙ Generate All Pages** — creates and saves all pages to the output folder, each with its drawing layers already set up. Pages are closed after saving to keep memory low; open the ones you want from the folder.
 
 ### Setup Drawing Layers (Regenerate Masks)
 Drawing groups are created **automatically** when you generate a page. These buttons exist to **regenerate** them — for example after editing your layout with Krita's panel tool, or if you accidentally deleted a frame group.
@@ -191,7 +191,6 @@ To update: overwrite the files in `pykrita/comicpagebuilder/` and close/reopen t
 
 - **Panels group is a group, not a flat vector layer** — Krita's "select all shapes" commands operate per-layer. To move or transform all panels simultaneously, select all child layers inside the Panels group.
 - **Diagonal cuts via BSP** — the randomizer only produces rectilinear (90°) cuts. For diagonal panels, use Krita's panel tool on the individual Panel N layers after generation, then regenerate masks.
-- **Batch generation opens all pages** — each batch-saved page is opened in Krita after saving. For large batches (10+ pages) this will open many tabs. Close unneeded ones as you go.
 - **CMYK profile availability** — the CMYK color space option requires `ISO Coated v2 - Eci.icc` to be installed on your system. If it is not found, Krita will fall back to its default CMYK profile.
 
 ---

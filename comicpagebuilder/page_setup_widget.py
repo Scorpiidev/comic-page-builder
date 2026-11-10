@@ -50,6 +50,24 @@ def _save_user_preset(name: str, w: float, h: float):
     with open(_USER_PRESETS_FILE, "w", encoding="utf-8") as f:
         json.dump(presets, f, indent=2)
 
+def _rescale_spin(spin: QDoubleSpinBox, ratio: float, suffix: str, decimals: int):
+    """
+    Convert a spinbox to a new display unit.
+
+    Reads the value before touching the range: setRange() clamps the
+    current value, so shrinking the range first (e.g. mm -> cm) would
+    destroy it. Signals are blocked so linked handlers (like the safe-area
+    auto-link) don't fire mid-conversion with a stale unit factor.
+    """
+    value  = spin.value() * ratio
+    lo, hi = spin.minimum() * ratio, spin.maximum() * ratio
+    spin.blockSignals(True)
+    spin.setDecimals(decimals)
+    spin.setRange(lo, hi)
+    spin.setValue(value)
+    spin.setSuffix(suffix)
+    spin.blockSignals(False)
+
 def _mm_spin(min_val, max_val, default, decimals=2) -> QDoubleSpinBox:
     spin = QDoubleSpinBox()
     spin.setRange(min_val, max_val)
@@ -104,16 +122,8 @@ class _LockedPair(QWidget):
         self.value_changed.emit()
 
     def set_unit(self, ratio: float, suffix: str, decimals: int):
-        self._updating = True
-        self._spin_w.setRange(self._spin_w.minimum() * ratio, self._spin_w.maximum() * ratio)
-        self._spin_h.setRange(self._spin_h.minimum() * ratio, self._spin_h.maximum() * ratio)
-        self._spin_w.setDecimals(decimals)
-        self._spin_h.setDecimals(decimals)
-        self._spin_w.setSuffix(suffix)
-        self._spin_h.setSuffix(suffix)
-        self._spin_w.setValue(self._spin_w.value() * ratio)
-        self._spin_h.setValue(self._spin_h.value() * ratio)
-        self._updating = False
+        _rescale_spin(self._spin_w, ratio, suffix, decimals)
+        _rescale_spin(self._spin_h, ratio, suffix, decimals)
 
     def block(self, yes: bool):
         self._spin_w.blockSignals(yes)
@@ -487,11 +497,8 @@ class PageSetupWidget(QWidget):
         self._binding_pair.set_unit(ratio, suffix, decimals)
         
         for spin in (self._bleed, self._safe_area, self._margins, self._line_strength):
-            spin.setRange(spin.minimum() * ratio, spin.maximum() * ratio)
-            spin.setDecimals(decimals + 1)
-            spin.setValue(spin.value() * ratio)
-            spin.setSuffix(suffix)
-            
+            _rescale_spin(spin, ratio, suffix, decimals + 1)
+
         self._unit_factor  = new_f
         self._current_unit = new_unit
         self._margin_label.setText(f"Inner margin ({new_unit}):")

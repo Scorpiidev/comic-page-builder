@@ -329,8 +329,10 @@ class ProjectWidget(QWidget):
             skipped     = 0
             for d in docs:
                 root       = d.rootNode()
+                # Current pages build Panels as a group of Panel N layers;
+                # older pages used one flat vector layer. Accept both.
                 has_panels = any(
-                    n.name() == "Panels" and n.type() == "vectorlayer"
+                    n.name() == "Panels" and n.type() in ("grouplayer", "vectorlayer")
                     for n in root.childNodes()
                 )
                 if not has_panels:
@@ -344,7 +346,7 @@ class ProjectWidget(QWidget):
             if not comic_docs and not masked_docs:
                 QMessageBox.information(
                     self, "Nothing Found",
-                    "No open documents have a 'Panels' vector layer.\n"
+                    "No open documents have a 'Panels' layer.\n"
                     + (f"{skipped} non-comic document{'s were' if skipped != 1 else ' was'} skipped."
                        if skipped else "")
                 )

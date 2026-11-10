@@ -6,7 +6,6 @@ Preset + user-saved layouts. Saved tab shows only user layouts.
 
 import json
 import os
-import re
 
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QScrollArea,
@@ -51,8 +50,9 @@ def load_all_layouts(include_user: bool = True) -> list:
                 continue
             name     = os.path.splitext(fname)[0]
             is_title = name.lower().startswith("title")
-            m        = re.match(r"^(\d+)\s+frame", name)
-            frames   = int(m.group(1)) if m else len(rects)
+            # Count the rects, don't trust the filename: several bundled
+            # "4 frames ..." presets actually contain 5 panels.
+            frames   = len(rects)
             layouts.append({
                 "path":     path,
                 "name":     name,

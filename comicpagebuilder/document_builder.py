@@ -260,15 +260,21 @@ def open_document(spec: PageSpec, layout: dict):
 
 
 def save_document(spec: PageSpec, layout: dict, filepath: str):
-    """Build a document and save it to disk. Does NOT open or auto-mask.
-    For batch generation — keeps memory usage low by not opening documents.
+    """Build a document with its drawing layers, save it, then close it.
+    For batch generation: pages are never opened in a view, and closing
+    each one after saving keeps memory flat across the batch.
     """
-    from krita import Krita
     doc = build_document(spec, layout)
-    if not doc.saveAs(filepath):
-        raise RuntimeError(f"Krita could not save to: {filepath}")
-    # Don't addView or setup_masks for batch — caller opens manually if needed
-    return doc
+    try:
+        # Scaffold BEFORE saving so the file on disk has the frame groups.
+        try:
+            setup_masks(doc)
+        except Exception:
+            pass  # layout may be empty; still save the page
+        if not doc.saveAs(filepath):
+            raise RuntimeError(f"Krita could not save to: {filepath}")
+    finally:
+        doc.close()
 
 
 # ---------------------------------------------------------------------------
