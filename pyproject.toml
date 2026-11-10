@@ -1,0 +1,18 @@
+[project]
+name = "cpb-core"
+version = "0.1.0"
+description = "App-independent core of Comic Page Builder: page geometry, panel layouts, lettering and balloons."
+readme = "README.md"
+license = { text = "GPL-3.0-or-later" }
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+test = ["pytest>=8"]
+
+[tool.setuptools.packages.find]
+where = ["core"]
+
+[tool.pytest.ini_options]
+pythonpath = ["core"]
+testpaths = ["tests"]

@@ -24,6 +24,19 @@ Full details in [DOCUMENTATION.md](DOCUMENTATION.md).
 4. **Settings → Configure Krita → Python Plugin Manager**, enable **Comic Page Builder**, restart Krita.
 5. Open it from **Tools → Scripts → Comic Page Builder**.
 
+## Development
+
+The plugin is being rebuilt as a solo comic pipeline: a pure-Python core, a pink hub app, and importers for Photoshop, Illustrator and Krita. The plan lives in [docs/DESIGN.md](docs/DESIGN.md).
+
+The core (`core/cpb_core/`) uses only the standard library. To run its tests:
+
+```
+python -m pip install pytest
+python -m pytest
+```
+
+The 0.13 plugin in `comicpagebuilder/` keeps working while the rewrite happens beside it.
+
 ## Credits
 
 - Built by **Antares**.

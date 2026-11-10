@@ -1,8 +1,9 @@
 # Comic Pipeline: Design Doc
 
-**Status:** draft, written before the rewrite starts
+**Status:** M0 done (core skeleton + tests). Decisions D6–D9 come from the clickable prototype.
 **Author:** Antares
 **Last updated:** 2026-11-10
+**Prototype:** a clickable HTML prototype of the hub was used to settle the UX before building.
 
 Comic Page Builder grows into the page-building part of a solo comic
 pipeline: one hub app that manages the project and builds pages, plus small
@@ -17,8 +18,12 @@ importers that turn those pages into native layers in each app.
 | D1 | **Option A: a standalone hub app with thin importers per app.** | Adobe apps run JavaScript, not Python. The hard problems (lettering size, project management, consistent panels) belong in the hub. |
 | D2 | **Panels are strictly SVG.** Painted art stays in each app's native file. | SVG panels stay editable everywhere. Raster art can't meaningfully live in SVG. |
 | D3 | **Version 1 targets Photoshop and Illustrator.** Clip Studio Paint comes next. Krita stays as an importer. | These are the apps used most in the workflow. |
-| D4 | **The hub looks super cute and pink.** | Non-negotiable. See §11. |
+| D4 | **The hub is pink, in a Windows Vista/7 (Aero) style.** Glass frames, glossy toolbars, buttons with only slightly rounded corners. | Non-negotiable. Chosen over a rounded "cute" look and a flat Metro look. See §11. |
 | D5 | **The core is pure Python with the standard library only.** | The Krita importer has to be able to import it inside Krita's bundled Python. |
+| D6 | **A balloon's body and tail are edited separately**, wherever balloons are inserted. Moving the body leaves the tail tip pointing at the speaker unless "tip follows body" is on. | Lettering means placing the body for reading flow and the tail for the speaker, independently. |
+| D7 | **Balloons work on already-drawn pages.** Images (PNG/JPG/WebP) and PDFs can be imported, one page per image or PDF page, at their real size. | Lettering finished art is a core workflow, not just lettering generated pages. |
+| D8 | **Projects, Add page and Batch generate are first-class**: a project list, a New project wizard that doubles as Project settings, and batch generation with a preview. | Found missing while testing the prototype. Add page must be visible, not hidden in a menu. |
+| D9 | **Layouts are stored without gutters; layout seeds can be locked.** | Changing the gutter, margins or page size re-flows a layout instead of re-rolling it. |
 
 ---
 
@@ -73,9 +78,10 @@ importers that turn those pages into native layers in each app.
 
 ```
 core/cpb_core/
+    units.py         mm / pt / px / cm / in conversions            (M0, done)
+    geometry.py      PageSize + PageGeometry: trim / bleed / safe / live rects  (M0, done)
+    layouts/         cells + gutters + reading order, seeded BSP, presets, grid  (M0, done)
     model.py         dataclasses: Project, Page, Panel, Balloon, styles
-    geometry.py      PageGeometry: trim / bleed / safe / live rects
-    layouts/         presets, BSP, grid builder (no gutters stored)
     lettering/       font discovery, metrics, size advisor
     balloons/        balloon outline generation, text fitting
     svg/             writer.py, reader.py (round trip)
@@ -252,14 +258,24 @@ cpb-panels     one <path> per panel, stroke/fill from style
 
 - PySide6, installed with `pip`. It can be packaged as a desktop app with
   PyInstaller (free).
-- Screens:
-  1. **Projects:** recent projects, create or open one.
-  2. **Pages board:** thumbnails grouped by status
-     (thumbs → pencils → inks → colors → letters → done). Drag to change status.
-  3. **Page builder:** page size, layout picker, BSP or grid, panel style
-     (stroke colour, width, fill, corner radius), live preview.
-  4. **Lettering:** font picker, size advisor, calibration sheet (§9).
-  5. **Balloons:** place, edit and restyle balloons on the page preview.
+- Screens (validated in the prototype):
+  1. **Projects:** project list with details and the folder tree.
+     **New project…** is a 3-step wizard (General · Page setup · Folders &
+     pages); **Project settings…** reopens the same dialog as tabs.
+  2. **Pages:** thumbnails grouped by status
+     (thumbs → pencils → inks → colors → letters → done), a details pane with
+     a status dropdown, a visible **Add page** button plus a "+ Add page"
+     tile, **Batch generate…** (1–50 pages, layout mode, panel range, start
+     status, live preview, numbering continues after the last page), and
+     **Import drawn pages…**.
+  3. **Page builder:** page size (canvas is derived and shown read-only),
+     units, panel style (stroke colour, width, fill, corner radius), live
+     preview, and a Layout options dialog (BSP / presets / grid, locked
+     seed, right-to-left numbering, snap to thirds). Imported art pages
+     skip the builder.
+  4. **Balloons:** see §10. Works on generated and imported pages.
+  5. **Lettering:** font list with cap heights, size advisor, calibration
+     sheet (§9).
   6. **Export / send to app:** writes the files and tells you which
      importer script to run.
 
@@ -345,9 +361,28 @@ never by the working canvas.
 
 ## 10. Balloons
 
-- **Version 1 kinds:** speech (ellipse), caption (rounded box), thought
-  (cloud plus trailing bubbles), shout (spiky burst).
-- **Later:** whisper (dashed), merged balloons, more than one tail.
+- **Version 1 kinds:** speech (ellipse), caption (box), thought
+  (cloud plus trailing bubbles), shout (spiky burst), whisper (dashed).
+- **Later:** merged balloons, more than one tail.
+- **Separate body and tail (D6).** A balloon is stored as parameters, not
+  just a path:
+  ```
+  body:  kind, centre, rx, ry, auto_size, text, font, size_pt, stroke, width, fill
+  tail:  on, base_angle, base_width, bend, tip (x, y), tip_follows_body
+  ```
+  - Body handles: drag to move, four handles to resize. Resizing turns
+    auto-size off and re-wraps the text; "Fit to text" turns it back on.
+  - Tail handles: one on the rim (where the tail leaves the body), one at
+    the tip. Base width and bend are separate controls.
+  - Moving the body leaves the tip where it is, unless tip-follows-body is on.
+  - Keyboard: Tab switches body/tail, arrows nudge, Delete removes.
+  - The SVG still gets one combined outline per balloon (below); the
+    parameters are stored on the group so it can be edited again.
+- **Imported art (D7).** Balloons can be placed on imported images and PDF
+  pages. The art stays a linked file underneath; balloons are an SVG layer
+  on top. Later: detect panels in the art so balloons can snap inside them.
+- **Size check on every balloon:** the inspector shows the printed cap
+  height and warns below 1.5 mm (§9).
 - **One outline path:** the body and tail are built as **a single path**.
   Split the ellipse at the two angles where the tail attaches and insert the
   tail curve. The stroke never crosses the joint, and no boolean-operation
@@ -363,10 +398,32 @@ never by the working canvas.
 
 ---
 
-## 11. Visual direction: cutie patootie pink
+## 11. Visual direction: pastel pink Aero (Windows Vista/7)
 
-Theme tokens live in `hub/theme/pink.qss`. There's a light theme and a dark
-theme.
+**Settled in the prototype.** The hub looks like an old Windows 7 app in
+pastel pink:
+- glass window frames with a soft pink gradient, a pink gradient close
+  button, round back/forward buttons and an address bar;
+- glossy split-gradient command bars and buttons with **3 px corners**
+  (only slightly rounded), a sidebar tree, white content panes, group
+  boxes, classic tabs, a details pane and a status bar;
+- dialogs that overlap the main window and can be dragged;
+- system-like UI type (Segoe UI, falling back to Open Sans), and Inky the
+  ink-drop mascot in the title bar, on empty states and in the pink orb.
+
+Core tokens (from the prototype):
+
+| Token | Value |
+|---|---|
+| desktop | `#F6C7D6` |
+| pane / pane-alt | `#FFFFFF` / `#FFF5F8` |
+| text / muted | `#4A3340` / `#8E7381` |
+| accent / accent-text | `#D9568A` / `#B83C70` |
+| border / soft / strong | `#D9A7BA` / `#EFD3DD` / `#C98AA3` |
+| tail handles | `#2F7FD1` (blue, so the tail always reads apart from the body) |
+| canvas | `#D8D8DC` (neutral) |
+
+The earlier rounded "cute" token set is kept below for reference only.
 
 | Token | Light | Dark |
 |---|---|---|
@@ -422,14 +479,17 @@ theme.
 
 | # | Milestone | Done when |
 |---|---|---|
-| M0 | Restructure the repo, set up the core skeleton and pytest | geometry, layouts and BSP are ported with tests |
+| M0 ✅ | Core skeleton and pytest | geometry, layouts and BSP are ported with tests (done: 50 tests, passing on Python 3.10 and 3.13; CI runs 3.10–3.13) |
 | M1 | SVG writer and reader, page build from the command line | golden and round-trip tests pass |
 | M2 | **Risk spike:** Photoshop and Illustrator importers, test opening the PSD in CSP | one page imports into PS and AI; CSP result written down |
-| M3 | Hub app shell in pink: projects + page builder | build a page from the UI |
+| M3 | Hub app shell in pink Aero: projects (wizard + settings), pages (add + batch), page builder | build a page from the UI |
 | M4 | Lettering advisor + calibration sheet | test print done, presets saved |
-| M5 | Balloons | four kinds, text fitting, editable again later |
+| M5 | Balloons with separate body/tail editing, on generated and imported pages | five kinds, text fitting, editable again later, image/PDF import |
 | M6 | Krita importer port | parity with 0.13 |
-| M7 | Pages board, statuses, batch build | a whole chapter runs through the hub |
+| M7 | Pages board statuses, script link | a whole chapter runs through the hub |
+
+The 0.13 Krita plugin in `comicpagebuilder/` keeps working until M6 ports it
+onto the core; `core/` sits beside it and doesn't touch it.
 
 ---
 
