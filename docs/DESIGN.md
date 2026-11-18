@@ -1,6 +1,6 @@
 # Comic Pipeline: Design Doc
 
-**Status:** M0, M1 and M2 done (core, page.svg writer/reader, command line, Photoshop and Illustrator importers tested in the real apps, CSP route found), plus Photoshop re-import (updates the frames in an existing PSD without touching art). Decisions D6–D9 come from the clickable prototype.
+**Status:** M0, M1 and M2 done (core, page.svg writer/reader, command line, Photoshop and Illustrator importers tested in the real apps, CSP route found), plus re-import in Photoshop and Illustrator (updates the frames in an existing PSD or .ai without touching art or lettering). Decisions D6–D9 come from the clickable prototype.
 **Author:** Antares
 **Last updated:** 2026-11-18
 **Prototype:** a clickable HTML prototype of the hub was used to settle the UX before building.
@@ -350,8 +350,25 @@ cpb-paper      white canvas rect, so the file previews correctly anywhere
   paths, and sets text fonts by `ps_name`.
 - This is the natural place to finish lettering: live text, real vector
   balloons.
-- Re-import isn't built yet: the script always opens `page.svg` as a new
-  document.
+- **Re-import** (built and tested 2026-11-18, see `importers/M2_RESULTS.md`).
+  It applies when the active document is one the script made for the same
+  page number. Then the script:
+  - redraws the panels, guides and paper that changed;
+  - adds new panels;
+  - hides panels that left the layout.
+
+  Lettering and your own items are left alone.
+  - Each hub item carries a note,
+    `Comic Page Builder: cpb-panel-3 | page 9 | key …`. The key is a hash
+    of the element's tag in `page.svg`, so the script sees changes without
+    reading any geometry.
+  - New items come from a temporary copy of `page.svg`, opened by
+    Illustrator and duplicated across. Names, locks and clip groups you made
+    are kept.
+  - A changed page size is refused.
+  - **Undo:** Illustrator can't group a script into one undo step. So the
+    script asks before updating a document with unsaved changes, and File →
+    Revert is the way back.
 
 ### 8.4 Clip Studio Paint
 - There's no public scripting API, so the route is to open `page.psd`.

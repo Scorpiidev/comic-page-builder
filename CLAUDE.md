@@ -30,7 +30,12 @@ Photoshop, Illustrator and Krita. The plan and every decision live in
   - one history step.
 
   The test results are in `importers/M2_RESULTS.md`, under "After M2".
-  Illustrator re-import isn't built yet.
+- **Illustrator re-import done 2026-11-18**, the same idea:
+  - hub items carry a `Comic Page Builder: …` note;
+  - updates leave lettering and the user's own items alone.
+
+  Illustrator can't undo a script in one step, so File → Revert is the way
+  back (the script asks before updating unsaved work).
 
 The previous work was done in a cloud session that can't reach this PC's
 apps. That's why you're here.

@@ -52,6 +52,28 @@ Limits:
 The page opens with layers **Guides** (locked, non-printing), **Letters**,
 **Panels** (named Panel 1, Panel 2…) and **Paper** (locked).
 
+**Save it as an .ai file** (File → Save As) before you letter. The document
+still is `page.svg`, and a plain Save would write Illustrator's SVG over the
+hub's file.
+
+### Updating a page you've already lettered
+
+Write `page.svg` again from the hub. Then, with the `.ai` active, run the
+script again and pick the same file. It:
+- redraws the panels, guides and paper that changed;
+- adds new panels;
+- hides panels that left the layout (it never deletes them);
+- leaves your lettering and your own items alone.
+
+Names, locks and clip groups you made with a panel are kept.
+
+Illustrator can't undo a script in one step (Ctrl+Z goes back one change at a
+time), so **save before updating**: File → Revert is then the way back. The
+script asks first if there are unsaved changes.
+
+As in Photoshop, it only updates a document it made for the same page number,
+and it refuses a page whose size changed.
+
 ## Clip Studio Paint (tested with EX)
 
 CSP has no scripting, so a page arrives in two steps:
@@ -99,6 +121,10 @@ This milestone exists to find out what actually works. For each app, note:
 - [ ] Four layers, in the order Guides, Letters, Panels, Paper.
 - [ ] Panels are editable paths with the right stroke.
 - [ ] Guides don't print (File → Print preview).
+- [ ] Re-import: letter something, save as .ai, rebuild the page with another
+      seed, and run the script again. The panels move; the lettering, names,
+      locks and clip groups stay.
+- [ ] Re-import with the same file again: "Nothing changed".
 
 **Clip Studio Paint (4.0.3)**: open the PSD you saved from Photoshop.
 - [ ] Are the groups and the Frame N names kept?

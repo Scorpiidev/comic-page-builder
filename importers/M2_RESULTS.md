@@ -297,11 +297,95 @@ left-column mask.
 **Not changed:** a fresh import still leaves many history steps. Only updates
 are one step. A new document can just be closed.
 
+## After M2: Illustrator re-import (built and tested 2026-11-18)
+
+Running `import_page.jsx` with a document it made as the active document now
+**updates** that document. Tested on Illustrator 30.2.1.
+
+**How it finds its own items:** each hub item carries a **note** (the
+Attributes panel shows it), such as
+`Comic Page Builder: cpb-panel-3 | page 9 | key 1f2e3d4c`. A probe confirmed
+the note survives a save as `.ai` and a reopen.
+
+The key is a short hash of the element's own tag in `page.svg`. The hub writes
+the same text for the same panel, so a new key means the panel changed. The
+script never has to understand the geometry.
+
+**What an update does:**
+- It opens a temporary copy of the new `page.svg`. A copy matters because, if
+  the document is still that `page.svg`, opening the file again would just hand
+  back the same document.
+- For each hub item whose key changed, it duplicates the new item in above the
+  old one, then deletes the old one. The new item keeps:
+  - the old name;
+  - its lock and hidden state;
+  - its place as the clipping path of a clip group you made.
+- **New panels** go next to their neighbour panel.
+- **Panels that left the layout** are hidden, never deleted.
+- **Unchanged items** (here, guides and paper) aren't touched.
+- **Locked or hidden layers** are unlocked and shown for the update, then put
+  back.
+- **Refused:** a page whose size changed.
+- **New document instead:** another page number, or a document with no notes.
+
+**Test** (a harness swapped the file dialog and alerts; then one real run from
+File → Scripts → Other Script).
+
+Fresh import of `page_09.svg`, then the user edits:
+- lettering (a text frame and a balloon on Letters);
+- Panel 2 used as the clipping path of a clip group over an "SFX art"
+  rectangle;
+- Panel 3 renamed "Splash", Panel 1 locked;
+- saved as `page_09.ai`, closed and reopened.
+
+Results:
+1. **New layout (seed 777):** all 6 panels sit on their new rects. The guides
+   and paper were left alone, and the edits survived: lettering untouched,
+   "Splash" kept, Panel 1 still locked, and the clip group still clipped by
+   the new Panel 2.
+2. **7 panels** (run from the menu): Panel 7 added.
+   **Same file again:** "already matches … Nothing changed".
+3. **Panel 4 deleted by hand, then 4 panels:** Panel 4 made again, and
+   panels 5–7 hidden. **Back to 6:** 5 and 6 shown and redrawn; 7 stays hidden.
+4. **Refusals and new documents:**
+   - A 176 mm wide page was refused, and nothing changed.
+   - Page 10 made a new document.
+   - An old untagged import gets "can't be updated, close it to import
+     fresh".
+   - A fresh import with no document open works.
+
+**Found while testing (fixed):**
+- **Slow:** the first version took **36–40 s** for 7 panels, from COM and from
+  the menu alike. Reading the items of a document that isn't active costs about
+  0.3 s per item, and the script searched the temporary page once per panel.
+  It now collects them all in one pass while that page is active: **3 s**, and
+  under 4 s from the menu.
+- **Undo can't be one step.** Illustrator undoes a script operation by
+  operation: one Ctrl+Z after a menu run only took back Panel 7's name and
+  note. ExtendScript has no way to group them, unlike Photoshop's
+  `suspendHistory`. So File → Revert is the way back, and the script:
+  - asks first when the document has unsaved changes ("save first if you want
+    File > Revert as a one-step way back");
+  - asks first, more firmly, when the document is still the hub's `page.svg`
+    (never saved as `.ai`);
+  - doesn't ask when nothing would change (it checks the notes first);
+  - says so in the final alert.
+- A fresh import now says to save as `.ai` before lettering. Illustrator saves
+  a document opened from an SVG back as SVG, which would overwrite the hub's
+  `page.svg`.
+- With no document open, an early version would have crashed on the
+  "already open" check (`null === null`). Fixed before it ran.
+
+**Not covered:** balloons (`cpb-letters`) are still empty until M5. When they
+exist, their groups will need the same notes.
+
 ## Files changed
 
 - `importers/photoshop/import_page.psjs`: top-level `await`; Border made
   before the art layers, then moved above Ink; clipping set last. After M2:
   XMP tags on the hub's layers, and the update mode described above.
+- `importers/illustrator/import_page.jsx`: after M2, notes on the hub's
+  items and the update mode described above.
 - `core/cpb_core/svg/borders.py`, the `borders` CLI command, and
   `tests/test_borders.py`: the borders-only SVG for CSP.
 - `importers/README.md`: how to bring a page into CSP.
