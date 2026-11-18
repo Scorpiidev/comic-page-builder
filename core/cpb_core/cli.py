@@ -19,7 +19,7 @@ import re
 import sys
 from typing import Optional, Sequence
 
-from .build import page_from_bsp, page_from_grid, page_from_preset
+from .build import page_from_bsp, page_from_grid, page_from_preset, plan_batch
 from .geometry import PageSize
 from .layouts.bsp import MODES
 from .layouts.presets import load_presets
@@ -133,19 +133,21 @@ def cmd_build(a: argparse.Namespace) -> int:
 
 
 def cmd_batch(a: argparse.Namespace) -> int:
-    if not 1 <= a.count <= 50:
-        raise ValueError("--count must be between 1 and 50")
-    lo, hi = sorted((a.min_panels, a.max_panels))
     os.makedirs(a.folder, exist_ok=True)
     start = next_page_number(a.folder)
-    rng = random.Random(a.seed)  # a batch seed makes the whole batch repeatable
-    for i in range(a.count):
-        if a.layout == "bsp":
-            mode = rng.choice(("auto", "rows", "cols")) if a.batch_mode == "mixed" else (
-                a.mode if a.batch_mode == "same" else a.batch_mode)
-            seed = a.seed if a.batch_mode == "same" and a.seed is not None else rng.randrange(10_000, 100_000)
-            panels = a.panels if a.batch_mode == "same" else rng.randint(lo, hi)
-            page = _build_one(a, start + i, seed, panels=panels, mode=mode)
+    if a.layout == "bsp":
+        same = {"kind": "bsp", "panels": a.panels, "mode": a.mode, "seed": a.seed, "snap": not a.no_snap}
+        if a.batch_mode == "same" and a.seed is None:
+            same["seed"] = random.randrange(10_000, 100_000)
+        plan = plan_batch(a.count, mode=a.batch_mode, min_panels=a.min_panels, max_panels=a.max_panels,
+                          seed=a.seed, same_as=same)
+    else:
+        if not 1 <= a.count <= 50:
+            raise ValueError("--count must be between 1 and 50")
+        plan = [None] * a.count
+    for i, recipe in enumerate(plan):
+        if recipe:
+            page = _build_one(a, start + i, recipe["seed"], panels=recipe["panels"], mode=recipe["mode"])
         else:
             page = _build_one(a, start + i, None)
         path = os.path.join(a.folder, page.file_name)

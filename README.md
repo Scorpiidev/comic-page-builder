@@ -47,6 +47,8 @@ PYTHONPATH=core python -m cpb_core info page_07.svg
 
 On Windows PowerShell, set the path first with `$env:PYTHONPATH="core"`.
 
+**The hub app** (pink, Windows 7 style) lives in `hub/`. On Windows, double-click `hub\start_comic_hub.bat`; see [hub/README.md](hub/README.md).
+
 The 0.13 plugin in `comicpagebuilder/` keeps working while the rewrite happens beside it.
 
 ## Credits

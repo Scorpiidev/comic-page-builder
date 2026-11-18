@@ -37,6 +37,19 @@ Photoshop, Illustrator and Krita. The plan and every decision live in
   Illustrator can't undo a script in one step, so File → Revert is the way
   back (the script asks before updating unsaved work).
 
+- **M3 done 2026-11-18** in the cloud session: the hub app in `hub/`
+  (start with `hub\start_comic_hub.bat`) and `core/cpb_core/project.py`
+  (project.json, `pages/NNN/page.svg`). Screens: All projects (wizard +
+  settings), Pages (status groups, add, batch), Page builder (save keeps
+  other apps' edits). It was only ever run headless on Linux, so **on
+  Windows, please check**:
+  - the title bar turns pink on Windows 11 (`hub/comic_hub/winframe.py`);
+  - Segoe UI is used and nothing is clipped at 125% / 150% display scaling;
+  - `start_comic_hub.bat` installs PySide6 on first run and starts the app;
+  - a page saved in the hub imports into Photoshop and Illustrator as before.
+
+  Write what you find to `hub/WINDOWS_CHECK.md`, fix small things, commit, push.
+
 The previous work was done in a cloud session that can't reach this PC's
 apps. That's why you're here.
 
@@ -76,7 +89,7 @@ what changed in `M2_RESULTS.md`.
   with `cpb-`. Never delete anything else.
 - **Importers never compute geometry.** Each panel carries its final rect
   in `cpb:rect`.
-- Run `python -m pytest` before every commit (79 tests at last count).
+- Run `python -m pytest` before every commit (101 tests at last count; the hub tests need PySide6).
   Golden files regenerate only on purpose: `CPB_UPDATE_GOLDEN=1`.
 - Don't touch `comicpagebuilder/` (the 0.13 plugin) until M6.
 - Commit messages explain the why. Ivón is learning Python, so code comments

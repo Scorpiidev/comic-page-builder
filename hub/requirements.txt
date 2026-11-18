@@ -1,0 +1,3 @@
+# The hub's only dependency. Essentials is the smaller PySide6 package
+# (Widgets, Svg), which is all the hub uses. LGPL, free.
+PySide6-Essentials>=6.8

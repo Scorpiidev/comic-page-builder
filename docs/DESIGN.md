@@ -81,12 +81,13 @@ core/cpb_core/
     units.py         mm / pt / px / cm / in conversions            (M0, done)
     geometry.py      PageSize + PageGeometry: trim / bleed / safe / live rects  (M0, done)
     layouts/         cells + gutters + reading order, seeded BSP, presets, grid  (M0, done)
-    model.py         dataclasses: Project, Page, Panel, Balloon, styles
+    model.py         Page, Panel, PanelStyle                                  (M1, done)
+    project.py       project folder + project.json, pages/NNN/page.svg, batches (M3, done)
     lettering/       font discovery, metrics, size advisor
     balloons/        balloon outline generation, text fitting
     svg/             writer.py, reader.py (round trip)
     project.py       folder scaffold, manifest read and write
-hub/                 PySide6 app, theme/pink.qss, bundled UI font
+hub/comic_hub/       PySide6 app: theme.py (pink Aero QSS), views, dialogs       (M3, done)
 importers/
     photoshop/import_page.psjs   UXP script (Photoshop 27.4)          (M2, tested)
     illustrator/import_page.jsx  ExtendScript (Illustrator 30.2)      (M2, tested)
@@ -555,7 +556,7 @@ The earlier rounded "cute" token set is kept below for reference only.
 | M0 ✅ | Core skeleton and pytest | geometry, layouts and BSP are ported with tests (done: 50 tests, passing on Python 3.10 and 3.13; CI runs 3.10–3.13) |
 | M1 ✅ | SVG writer and reader, page build from the command line | golden and round-trip tests pass (done: `python -m cpb_core build / batch / info / papers`; 71 tests on Python 3.10 and 3.13) |
 | M2 ✅ | Risk spike: Photoshop and Illustrator importers, test opening the PSD in CSP | one page imports into PS and AI; CSP result written down (done 2026-11-18: see `importers/M2_RESULTS.md`; plus `python -m cpb_core borders` for CSP vector borders; 79 tests) |
-| M3 | Hub app shell in pink Aero: projects (wizard + settings), pages (add + batch), page builder | build a page from the UI |
+| M3 ✅ | Hub app shell in pink Aero: projects (wizard + settings), pages (add + batch), page builder | build a page from the UI (done 2026-11-18: `hub/`, `core/cpb_core/project.py`; 101 tests incl. headless hub tests) |
 | M4 | Lettering advisor + calibration sheet | test print done, presets saved |
 | M5 | Balloons with separate body/tail editing, on generated and imported pages | five kinds, text fitting, editable again later, image/PDF import |
 | M6 | Krita importer port | parity with 0.13 |

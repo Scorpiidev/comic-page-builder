@@ -56,3 +56,36 @@ def rebuild(page: Page, size: Optional[PageSize] = None) -> Page:
         return page_from_bsp(page.number, size, r["panels"], mode=r["mode"], seed=r["seed"],
                              snap=r["snap"], gutter=page.gutter, reading=page.reading, style=page.style)
     return Page(page.number, size, page.cells, page.gutter, page.reading, page.style, dict(r))
+
+
+BATCH_MODES = ("auto", "mixed", "chaos", "same")
+
+
+def plan_batch(count: int, *, mode: str = "auto", min_panels: int = 4, max_panels: int = 6,
+               seed: Optional[int] = None, same_as: Optional[dict] = None) -> list[dict]:
+    """
+    Recipes for a batch of BSP pages: one dict per page with panels, mode and seed.
+
+    mode:
+        ``"auto"`` / ``"chaos"``  every page uses that cut mode
+        ``"mixed"``               each page picks auto, rows or cols
+        ``"same"``                every page copies ``same_as`` (a page's layout recipe)
+    The same ``seed`` always gives the same batch.
+    """
+    if not 1 <= count <= 50:
+        raise ValueError("a batch is 1 to 50 pages")
+    if mode not in BATCH_MODES:
+        raise ValueError(f"batch mode must be one of {BATCH_MODES}")
+    if mode == "same":
+        if not same_as or same_as.get("kind") != "bsp":
+            raise ValueError("'same' needs a random-layout page to copy")
+        return [dict(panels=same_as["panels"], mode=same_as["mode"], seed=same_as["seed"],
+                     snap=same_as.get("snap", True)) for _ in range(count)]
+    lo, hi = sorted((min_panels, max_panels))
+    rng = random.Random(seed)
+    plan = []
+    for _ in range(count):
+        cut = rng.choice(("auto", "rows", "cols")) if mode == "mixed" else mode
+        page_seed = rng.randrange(10_000, 100_000)
+        plan.append(dict(panels=rng.randint(lo, hi), mode=cut, seed=page_seed, snap=True))
+    return plan
