@@ -23,6 +23,14 @@ Photoshop, Illustrator and Krita. The plan and every decision live in
   - `importers/photoshop/import_page.psjs` (UXP script, Photoshop 27.4)
   - `importers/illustrator/import_page.jsx` (ExtendScript, Illustrator 30.2)
   - Clip Studio Paint EX 4.0.3 only gets tested by opening the saved PSD.
+- **Photoshop re-import done 2026-11-18.** Running `import_page.psjs` with a
+  PSD it made as the active document updates the frames in place:
+  - the hub's layers are found by XMP tags;
+  - art layers are never touched;
+  - one history step.
+
+  The test results are in `importers/M2_RESULTS.md`, under "After M2".
+  Illustrator re-import isn't built yet.
 
 The previous work was done in a cloud session that can't reach this PC's
 apps. That's why you're here.

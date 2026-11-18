@@ -1,6 +1,6 @@
 # Comic Pipeline: Design Doc
 
-**Status:** M0, M1 and M2 done (core, page.svg writer/reader, command line, Photoshop and Illustrator importers tested in the real apps, CSP route found). Decisions D6–D9 come from the clickable prototype.
+**Status:** M0, M1 and M2 done (core, page.svg writer/reader, command line, Photoshop and Illustrator importers tested in the real apps, CSP route found), plus Photoshop re-import (updates the frames in an existing PSD without touching art). Decisions D6–D9 come from the clickable prototype.
 **Author:** Antares
 **Last updated:** 2026-11-18
 **Prototype:** a clickable HTML prototype of the hub was used to settle the UX before building.
@@ -312,7 +312,13 @@ cpb-paper      white canvas rect, so the file previews correctly anywhere
   guides, letters) and **never touches the art layers**. This fixes today's
   "Regenerate adds a second Comic Frames" bug by design.
 - Layers are matched by stable ids (`cpb-panel-3`), not by name, so
-  renaming a layer by hand doesn't break anything.
+  renaming a layer by hand doesn't break anything. Each app keeps the id
+  wherever it can hold one. In Photoshop, that's the layer's own XMP
+  metadata (§8.2).
+- Frames follow panel **numbers**. If a new layout renumbers the panels, the
+  art drawn in frame 4 stays in frame 4, wherever panel 4 ends up.
+- A frame whose panel left the layout is hidden, never deleted, so no art is
+  lost.
 
 ### 8.2 Photoshop (`import_page.psjs`)
 - A UXP script (Photoshop's current scripting, modern JavaScript), run from
@@ -323,14 +329,29 @@ cpb-paper      white canvas rect, so the file previews correctly anywhere
   with `batchPlay`), Ink / Color / Sketch (pixel layers, `isClippingMask`),
   and Mask (white panel shape as the clipping base). Guides mark the trim
   and safe area.
-- M2 version: always makes a new document. Re-importing into an existing
-  PSD without touching art layers comes after the test results.
+- **Re-import** (built after M2, tested 2026-11-18, see
+  `importers/M2_RESULTS.md`). It applies when the active document is a PSD the
+  script made for the same page number. Then the script:
+  - redraws Mask and Border where the panel changed;
+  - adds frames for new panels;
+  - hides frames whose panel left;
+  - moves its own guides.
+
+  Art layers are never touched. The whole update is one history step and rolls
+  back on error.
+  - The hub's layers carry a `cpb:id` tag (`cpb-frames`, `cpb-frame-N`,
+    `cpb-mask-N`, `cpb-border-N`) in their layer XMP metadata, so renaming
+    or regrouping them by hand doesn't matter.
+  - A changed page size is refused, because resizing would shift the art.
+  - Anything else (no tags, another page) gets a new document.
 
 ### 8.3 Illustrator (`import_page.jsx`)
 - Opens `page.svg`, moves the groups into named layers, applies the clipping
   paths, and sets text fonts by `ps_name`.
 - This is the natural place to finish lettering: live text, real vector
   balloons.
+- Re-import isn't built yet: the script always opens `page.svg` as a new
+  document.
 
 ### 8.4 Clip Studio Paint
 - There's no public scripting API, so the route is to open `page.psd`.

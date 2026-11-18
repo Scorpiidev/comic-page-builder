@@ -1,8 +1,14 @@
-// Comic Page Builder: import a page.svg into Photoshop.
+// Comic Page Builder: import a page.svg into Photoshop, or update a PSD it made.
 //
 // Run it from File > Scripts > Browse… and pick this file (Photoshop 2023 or
-// newer; written against 27.4). It asks for a page.svg made by the hub and
-// builds a new document:
+// newer; tested on 27.4). It asks for a page.svg made by the hub.
+//
+// * If the active document was made by this script for the same page, it is
+//   UPDATED: frames move and resize to the new layout, new panels get new
+//   frames, and frames whose panel left the layout are hidden (never deleted).
+//   Only the hub's own layers change (Border, Mask, guides). Your art layers
+//   are never touched, and one Ctrl+Z undoes the whole update.
+// * Otherwise it builds a NEW document:
 //
 //   Comic Frames          group
 //     Frame N             group per panel, in reading order
@@ -12,8 +18,9 @@
 //   Background            white paper
 //   + guides at the trim and safe area (guides never print)
 //
-// This is the M2 test version: it always makes a new document. Re-importing
-// into an existing PSD without touching your art comes after the test.
+// The hub's layers carry a small tag in their XMP metadata (cpb:id), so they
+// are found by that tag, not by name: renaming or regrouping them by hand
+// doesn't break updates.
 
 const { app, core, action, constants } = require("photoshop");
 const { localFileSystem } = require("uxp").storage;
@@ -31,6 +38,7 @@ function readPage(text) {
   const rootTag = text.match(/<svg\b[^>]*>/);
   if (!rootTag) throw new Error("This file isn't an SVG.");
   const root = attrs(rootTag[0]);
+  if (root["cpb:format"] === "cpb-borders") throw new Error("This is the borders-only file for Clip Studio Paint. Pick the page.svg instead.");
   if (root["cpb:format"] !== "cpb-page") throw new Error("This SVG wasn't made by Comic Page Builder.");
   if (Number(root["cpb:version"] || 1) > 1) throw new Error("This page was saved by a newer Comic Page Builder. Update the script.");
   const num = (k) => {
@@ -69,6 +77,7 @@ function readPage(text) {
 // ---------- helpers ----------
 const px = (mm, dpi) => (mm * dpi) / 25.4;
 const unit = (v) => ({ _unit: "pixelsUnit", _value: v });
+const { PLACEBEFORE, PLACEAFTER, PLACEINSIDE } = constants.ElementPlacement; // above, below, inside
 
 function rgb(hex) {
   const n = parseInt(hex.replace("#", ""), 16);
@@ -87,7 +96,15 @@ function rectShape(r, radius) {
   return shape;
 }
 
-// One shape layer (rectangle). `fill` and `stroke` are hex colours or null.
+const frameRect = (p, d) => ({ left: px(p.x, d), top: px(p.y, d), right: px(p.x + p.w, d), bottom: px(p.y + p.h, d) });
+const maskStyle = (page, p) => ({ fill: p.fill || "#ffffff", stroke: null, radius: px(page.radius, page.dpi) });
+const borderStyle = (page, p) => ({ fill: null, stroke: p.stroke, strokeWidth: px(p.strokeWidth, page.dpi), radius: px(page.radius, page.dpi) });
+// Everything that decides how a frame looks. Same key = nothing to redraw,
+// so running the script twice in a row changes nothing.
+const frameKey = (page, p) => [p.x, p.y, p.w, p.h, p.stroke, p.strokeWidth, p.fill || "none", page.radius].join(" ");
+
+// One shape layer (rectangle), made above the selected layer. `fill` and
+// `stroke` are hex colours or null.
 async function makeShape(name, r, { fill, stroke, strokeWidth, radius }) {
   const strokeStyle = {
     _obj: "strokeStyle", strokeStyleVersion: 2,
@@ -118,8 +135,142 @@ async function makeShape(name, r, { fill, stroke, strokeWidth, radius }) {
   return layer;
 }
 
-// ---------- build ----------
-async function build(page, fileName) {
+// Never leave an art layer selected before making a shape: if the selected
+// layer is an EMPTY pixel layer, Photoshop swaps it for the new shape layer
+// and the art layer is gone (found in the M2 test).
+async function selectLayer(layer) {
+  await action.batchPlay([{ _obj: "select", _target: [{ _ref: "layer", _id: layer.id }], makeVisible: false }], {});
+}
+
+// Setting isClippingMask = false on a layer that isn't clipped throws
+// ("Release Clipping Mask is not available"), so ask first.
+function unclip(layer) {
+  if (layer.isClippingMask) layer.isClippingMask = false;
+}
+
+// ---------- tags: how the script recognises its own layers ----------
+const CPB_NS = "https://github.com/Scorpiidev/comic-page-builder/ns/1/";
+const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
+const unesc = (s) => s.replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&amp;/g, "&");
+
+async function setTag(layer, tag) {
+  const fields = Object.entries(tag).map(([k, v]) => ` cpb:${k}="${esc(v)}"`).join("");
+  const xmp = '<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">' +
+    `<rdf:Description rdf:about="" xmlns:cpb="${CPB_NS}"${fields}/></rdf:RDF></x:xmpmeta>`;
+  await action.batchPlay([{
+    _obj: "set",
+    _target: [{ _ref: "property", _property: "metadata" }, { _ref: "layer", _id: layer.id }],
+    to: { _obj: "metadata", layerXMP: xmp },
+  }], {});
+}
+
+function parseTag(xmp) {
+  if (!xmp || xmp.indexOf(CPB_NS) < 0) return null;
+  const tag = {};
+  // Attributes as we write them, and the element form in case Photoshop rewrites the packet.
+  for (const re of [/cpb:([\w-]+)="([^"]*)"/g, /<cpb:([\w-]+)>([^<]*)<\/cpb:\1>/g]) {
+    let m;
+    while ((m = re.exec(xmp))) tag[m[1]] = unesc(m[2]);
+  }
+  return tag.id ? tag : null;
+}
+
+function flatten(layers, out = []) {
+  for (const layer of layers) {
+    out.push(layer);
+    if (layer.layers) flatten(layer.layers, out);
+  }
+  return out;
+}
+
+// Map of tag id -> { layer, tag }. Layers are listed top to bottom, and a
+// duplicated layer copies its tag, so the topmost copy wins.
+async function findTagged(doc) {
+  const all = flatten(doc.layers);
+  const found = new Map();
+  if (!all.length) return found;
+  const results = await action.batchPlay(all.map((layer) => ({
+    _obj: "get", _target: [{ _ref: "property", _property: "metadata" }, { _ref: "layer", _id: layer.id }],
+  })), {});
+  all.forEach((layer, i) => {
+    const r = results[i];
+    const tag = parseTag(r && r.metadata && r.metadata.layerXMP);
+    if (tag && !found.has(tag.id)) found.set(tag.id, { layer, tag });
+  });
+  return found;
+}
+
+// ---------- frames and guides ----------
+// Builds one frame group above the selected layer and returns it.
+async function buildFrame(doc, page, p) {
+  const r = frameRect(p, page.dpi);
+  const mask = await makeShape(`Mask ${p.index}`, r, maskStyle(page, p));
+  // Make the Border while the Mask is selected (see selectLayer).
+  const border = await makeShape(`Border ${p.index}`, r, borderStyle(page, p));
+  const sketch = await doc.createLayer({ name: "Sketch" });
+  const color = await doc.createLayer({ name: "Color" });
+  const ink = await doc.createLayer({ name: "Ink" });
+  // The new art layers land above the Border (selecting the Mask first
+  // didn't change that in the M2 test), so lift the Border back above Ink.
+  // Clip only afterwards, so the art clips to the Mask, not to the Border.
+  border.move(ink, PLACEBEFORE);
+  for (const l of [sketch, color, ink]) l.isClippingMask = true;
+  const group = await doc.createLayerGroup({ name: `Frame ${p.index}`, fromLayers: [border, ink, color, sketch, mask] });
+  await setTag(mask, { id: `cpb-mask-${p.index}` });
+  await setTag(border, { id: `cpb-border-${p.index}` });
+  await setTag(group, { id: `cpb-frame-${p.index}`, key: frameKey(page, p) });
+  return group;
+}
+
+// Redraw a hub shape layer in place: the new one is made right above the old
+// one, then the old one is deleted. Photoshop can unclip the art while that
+// happens (unclipping a layer also unclips the layers above it), so note which
+// neighbours were clipped first and clip them again afterwards.
+async function replaceShape(old, r, style, id) {
+  const siblings = old.parent ? old.parent.layers : app.activeDocument.layers;
+  const clipped = siblings.filter((l) => l.id !== old.id && l.isClippingMask);
+  await selectLayer(old);
+  const fresh = await makeShape(old.name, r, style); // keep a name you gave it
+  unclip(fresh);
+  fresh.visible = old.visible;
+  await setTag(fresh, { id });
+  old.delete();
+  // Bottom to top, so each layer finds its clipping base already in place.
+  for (const l of clipped.reverse()) if (!l.isClippingMask) l.isClippingMask = true;
+  return fresh;
+}
+
+// Guides at the trim and safe area, as text ("v70.866 h70.866 …"). The text is
+// stored in the Comic Frames tag, so an update can remove exactly these guides
+// and leave the ones you added alone.
+function guideText(page) {
+  const d = page.dpi, out = [];
+  const trim = [page.bleed, page.canvasW - page.bleed, page.bleed, page.canvasH - page.bleed];
+  const safe = [page.bleed + page.safe, page.canvasW - page.bleed - page.safe, page.bleed + page.safe, page.canvasH - page.bleed - page.safe];
+  for (const [x1, x2, y1, y2] of [trim, safe]) {
+    for (const x of [x1, x2]) out.push("v" + px(x, d).toFixed(3));
+    for (const y of [y1, y2]) out.push("h" + px(y, d).toFixed(3));
+  }
+  return out.join(" ");
+}
+
+const parseGuides = (text) => (text || "").split(/\s+/).filter(Boolean).map((g) => ({ v: g[0] === "v", at: parseFloat(g.slice(1)) }));
+
+function addGuides(doc, text) {
+  for (const g of parseGuides(text)) doc.guides.add(g.v ? constants.Direction.VERTICAL : constants.Direction.HORIZONTAL, g.at);
+}
+
+function removeGuides(doc, text) {
+  const ours = parseGuides(text);
+  for (let i = doc.guides.length - 1; i >= 0; i--) {
+    const g = doc.guides[i];
+    const v = g.direction === constants.Direction.VERTICAL;
+    if (ours.some((o) => o.v === v && Math.abs(o.at - g.coordinate) < 0.5)) g.delete();
+  }
+}
+
+// ---------- new document ----------
+async function buildDocument(page, fileName) {
   const d = page.dpi;
   const W = Math.round(px(page.canvasW, d)), H = Math.round(px(page.canvasH, d));
   const doc = await app.documents.add({
@@ -128,53 +279,135 @@ async function build(page, fileName) {
     mode: constants.NewDocumentMode.RGB,
     fill: constants.DocumentFill.WHITE,
   });
-
-  // Guides at trim and safe area: they never print.
-  const trim = [page.bleed, page.canvasW - page.bleed, page.bleed, page.canvasH - page.bleed];
-  const safe = [page.bleed + page.safe, page.canvasW - page.bleed - page.safe, page.bleed + page.safe, page.canvasH - page.bleed - page.safe];
-  for (const [x1, x2, y1, y2] of [trim, safe]) {
-    doc.guides.add(constants.Direction.VERTICAL, px(x1, d));
-    doc.guides.add(constants.Direction.VERTICAL, px(x2, d));
-    doc.guides.add(constants.Direction.HORIZONTAL, px(y1, d));
-    doc.guides.add(constants.Direction.HORIZONTAL, px(y2, d));
-  }
-
+  const guides = guideText(page);
+  addGuides(doc, guides);
   const frames = [];
-  const radius = px(page.radius, d);
   // Build the last panel first so Frame 1 ends up at the top of the Layers panel.
-  for (const p of [...page.panels].reverse()) {
-    const r = { left: px(p.x, d), top: px(p.y, d), right: px(p.x + p.w, d), bottom: px(p.y + p.h, d) };
-    const mask = await makeShape(`Mask ${p.index}`, r, { fill: p.fill || "#ffffff", stroke: null, radius });
-    // Make the Border while the Mask is selected. If an empty pixel layer
-    // (Ink) were selected, Photoshop would swap it for the new shape layer:
-    // Ink would vanish and the Border would inherit its clipping (M2 test).
-    const border = await makeShape(`Border ${p.index}`, r, {
-      fill: null, stroke: p.stroke, strokeWidth: px(p.strokeWidth, d), radius,
-    });
-    const sketch = await doc.createLayer({ name: "Sketch" });
-    const color = await doc.createLayer({ name: "Color" });
-    const ink = await doc.createLayer({ name: "Ink" });
-    // The new art layers land above the Border (selecting the Mask first
-    // didn't change that in the M2 test), so lift the Border back above Ink.
-    // Clip only afterwards, so the art clips to the Mask, not to the Border.
-    border.move(ink, constants.ElementPlacement.PLACEBEFORE);
-    for (const l of [sketch, color, ink]) l.isClippingMask = true;
-    const group = await doc.createLayerGroup({ name: `Frame ${p.index}`, fromLayers: [border, ink, color, sketch, mask] });
-    frames.push(group);
-  }
-  await doc.createLayerGroup({ name: "Comic Frames", fromLayers: frames });
-  return { doc, W, H };
+  for (const p of [...page.panels].reverse()) frames.push(await buildFrame(doc, page, p));
+  const group = await doc.createLayerGroup({ name: "Comic Frames", fromLayers: frames });
+  await setTag(group, { id: "cpb-frames", page: page.number, guides });
+  return `Imported ${fileName}: ${page.panels.length} panels on a ${page.canvasW} × ${page.canvasH} mm ` +
+    `canvas (${W} × ${H} px at ${d} dpi).`;
 }
 
+// ---------- update an existing document ----------
+// Resizing the canvas would shift or rescale the art, so a page whose size
+// changed is refused and left to you. Returns the reason, or null if it fits.
+function sizeProblem(doc, page) {
+  const d = page.dpi;
+  const W = Math.round(px(page.canvasW, d)), H = Math.round(px(page.canvasH, d));
+  const w = Math.round(doc.width), h = Math.round(doc.height), dpi = Math.round(doc.resolution);
+  if (w === W && h === H && dpi === Math.round(d)) return null;
+  return `Nothing changed. ${doc.name} is ${w} × ${h} px at ${dpi} dpi, but page ${page.number} ` +
+    `is now ${W} × ${H} px at ${d} dpi.\n\n` +
+    "To get it as a new document instead, switch to another document (or close this one) and run the script again.";
+}
+
+async function updateDocument(doc, page, tagged, fileName) {
+  const d = page.dpi;
+  const frames = tagged.get("cpb-frames");
+  const done = { redrawn: [], added: [], hidden: [], shown: [] };
+
+  for (const p of page.panels) {
+    const frame = tagged.get(`cpb-frame-${p.index}`);
+    if (!frame) {
+      await addFrame(doc, page, p, tagged, frames.layer);
+      done.added.push(p.index);
+      continue;
+    }
+    const key = frameKey(page, p);
+    const wasHidden = frame.tag.hidden === "1";
+    if (wasHidden) { frame.layer.visible = true; done.shown.push(p.index); }
+    const mask = tagged.get(`cpb-mask-${p.index}`), border = tagged.get(`cpb-border-${p.index}`);
+    if (frame.tag.key !== key || !mask || !border) {
+      const r = frameRect(p, d);
+      if (mask) await replaceShape(mask.layer, r, maskStyle(page, p), `cpb-mask-${p.index}`);
+      else await addMissingShape(frame.layer, r, maskStyle(page, p), `Mask ${p.index}`, `cpb-mask-${p.index}`, "bottom");
+      if (border) await replaceShape(border.layer, r, borderStyle(page, p), `cpb-border-${p.index}`);
+      else await addMissingShape(frame.layer, r, borderStyle(page, p), `Border ${p.index}`, `cpb-border-${p.index}`, "top");
+      done.redrawn.push(p.index);
+    }
+    if (frame.tag.key !== key || wasHidden) await setTag(frame.layer, { id: frame.tag.id, key });
+  }
+
+  // Frames whose panel left the layout: hidden, never deleted, so no art is lost.
+  const wanted = new Set(page.panels.map((p) => `cpb-frame-${p.index}`));
+  for (const [id, t] of tagged) {
+    if (!/^cpb-frame-\d+$/.test(id) || wanted.has(id) || t.tag.hidden === "1") continue;
+    t.layer.visible = false;
+    await setTag(t.layer, { ...t.tag, hidden: "1" });
+    done.hidden.push(t.layer.name);
+  }
+
+  // Only when the trim or safe area moved: redrawing them every time would
+  // make a run with nothing to do still leave a step in the History panel.
+  const guides = guideText(page);
+  if (guides !== frames.tag.guides) {
+    removeGuides(doc, frames.tag.guides);
+    addGuides(doc, guides);
+    await setTag(frames.layer, { ...frames.tag, guides });
+  }
+
+  const lines = [];
+  if (done.redrawn.length) lines.push(`Moved or redrawn: frames ${done.redrawn.join(", ")}.`);
+  if (done.added.length) lines.push(`New frames: ${done.added.join(", ")}.`);
+  if (done.shown.length) lines.push(`Shown again: frames ${done.shown.join(", ")}.`);
+  if (done.hidden.length) lines.push(`Hidden (their panel left the layout; art kept): ${done.hidden.join(", ")}.`);
+  if (!lines.length && guides === frames.tag.guides) return `${doc.name} already matches ${fileName}. Nothing changed.`;
+  if (!lines.length) lines.push("Moved the trim and safe guides.");
+  return `Updated ${doc.name} from ${fileName}.\n${lines.join("\n")}\n\n` +
+    "Art layers weren't touched. Ctrl+Z undoes the whole update.";
+}
+
+// A panel with no frame yet: build it, then slot it under the frame before it
+// in reading order (or above the one after it), so the stack stays in order.
+async function addFrame(doc, page, p, tagged, comicFrames) {
+  await selectLayer(comicFrames);
+  const group = await buildFrame(doc, page, p);
+  const before = page.panels.filter((q) => q.index < p.index && tagged.has(`cpb-frame-${q.index}`)).pop();
+  const after = page.panels.find((q) => q.index > p.index && tagged.has(`cpb-frame-${q.index}`));
+  if (before) group.move(tagged.get(`cpb-frame-${before.index}`).layer, PLACEAFTER);
+  else if (after) group.move(tagged.get(`cpb-frame-${after.index}`).layer, PLACEBEFORE);
+  else group.move(comicFrames, PLACEINSIDE);
+  tagged.set(`cpb-frame-${p.index}`, { layer: group, tag: { id: `cpb-frame-${p.index}` } });
+}
+
+// Border or Mask deleted by hand: make it again, on top of the frame (Border)
+// or at its bottom (Mask, so the art clips to it again).
+async function addMissingShape(frame, r, style, name, id, where) {
+  await selectLayer(frame);
+  const shape = await makeShape(name, r, style);
+  const kids = frame.layers || [];
+  if (where === "top" || !kids.length) shape.move(frame, PLACEINSIDE);
+  else shape.move(kids[kids.length - 1], PLACEAFTER);
+  unclip(shape);
+  await setTag(shape, { id });
+}
+
+// ---------- main ----------
 async function main() {
   const file = await localFileSystem.getFileForOpening({ types: ["svg"] });
   if (!file) return; // cancelled
   const page = readPage(await file.read());
-  const result = await core.executeAsModal(() => build(page, file.name), { commandName: "Import comic page" });
-  await app.showAlert(
-    `Imported ${file.name}: ${page.panels.length} panels on a ` +
-    `${page.canvasW} × ${page.canvasH} mm canvas (${result.W} × ${result.H} px at ${page.dpi} dpi).`
-  );
+  const message = await core.executeAsModal(async (ctx) => {
+    const doc = app.documents.length ? app.activeDocument : null;
+    const tagged = doc ? await findTagged(doc) : new Map();
+    const frames = tagged.get("cpb-frames");
+    if (!frames || Number(frames.tag.page) !== page.number) return buildDocument(page, file.name);
+    const problem = sizeProblem(doc, page);
+    if (problem) return problem;
+    // One history step for the whole update; if anything fails, roll it all back.
+    const history = await ctx.hostControl.suspendHistory({ documentID: doc.id, name: "Update comic frames" });
+    try {
+      const msg = await updateDocument(doc, page, tagged, file.name);
+      await ctx.hostControl.resumeHistory(history, true);
+      return msg;
+    } catch (e) {
+      await ctx.hostControl.resumeHistory(history, false);
+      throw e;
+    }
+  }, { commandName: "Import comic page" });
+  await app.showAlert(message);
 }
 
 // The await matters: Photoshop ends a script as soon as its top-level code

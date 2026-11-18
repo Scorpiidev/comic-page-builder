@@ -25,6 +25,25 @@ Inside each frame: **Border N** (shape layer, editable stroke), **Ink**,
 **Color** and **Sketch** (clipped to the mask), and **Mask N** (white panel
 shape).
 
+### Updating a page you've already drawn on
+
+Change the layout in the hub and write `page.svg` again. Then, with the PSD
+active, run the script again and pick the same file. It:
+- moves and redraws the **Border** and **Mask** layers;
+- adds frames for new panels;
+- hides frames whose panel is gone (it never deletes them);
+- leaves Sketch, Color, Ink and any layers of your own alone.
+
+One Ctrl+Z undoes the whole update.
+
+Limits:
+- It only updates a PSD that this script made for the same page number.
+  Anything else gets a new document, including PSDs made before re-import
+  existed.
+- If the page size changed, it refuses and changes nothing.
+- Frames follow panel **numbers**. If the new layout renumbers the panels,
+  Frame 4's art stays in Frame 4, wherever panel 4 ends up.
+
 ## Illustrator (written for 30.2)
 
 1. **File → Scripts → Other Script…** and choose `illustrator/import_page.jsx`.
@@ -70,6 +89,10 @@ This milestone exists to find out what actually works. For each app, note:
 - [ ] Frame 1 is at the top, and the frames are in reading order.
 - [ ] Guides sit on the trim and safe area.
 - [ ] Save as PSD.
+- [ ] Re-import: paint in a frame, rebuild the page with another seed, and run
+      the script again with the PSD active. The frames move, the art keeps its
+      pixels and clipping, and one Ctrl+Z undoes it.
+- [ ] Re-import with the same file again: "Nothing changed".
 
 **Illustrator**
 - [ ] The script ran. Any "Couldn't find…" lines in the alert?

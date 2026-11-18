@@ -215,10 +215,93 @@ tried in either app:
 - Not done automatically: deleting the raster Border layers in CSP. That stays
   a manual step (it's in `importers/README.md`).
 
+## After M2: Photoshop re-import (built and tested 2026-11-18)
+
+Running `import_page.psjs` with a PSD that it made as the active document now
+**updates** that PSD instead of making a new one (DESIGN §8.1, §8.2).
+
+**How it finds its own layers:** each hub layer carries a tag in its own XMP
+metadata: `cpb:id` = `cpb-frames`, `cpb-frame-N`, `cpb-mask-N` or
+`cpb-border-N`. The script sets and reads the tag with batchPlay on the layer's
+`metadata` property. A probe confirmed three things first:
+- the tag survives renaming the layer and a save and reopen as PSD;
+- layer ids persist;
+- a duplicated layer copies the tag, so the script keeps the topmost copy.
+
+**What an update does:**
+- **Update or new document?** It updates only if the active document's Comic
+  Frames tag has the same page number. Anything else gets a new document and
+  the active one isn't changed. That includes PSDs made before this change,
+  which have no tags.
+- **Changed panels:** a key stored on each frame covers rect, stroke, fill and
+  radius. If the key changed, Mask and Border are redrawn: a new shape is made
+  above the old one, then the old one is deleted. Names you gave them are kept.
+  Frames whose key matches are left alone.
+- **New panel:** gets a new frame, slotted into reading order.
+- **Panel gone:** its frame is hidden, never deleted. It's shown again if the
+  panel comes back.
+- **Border or Mask deleted by hand:** made again.
+- **Guides:** only the hub's own are moved (their positions are stored in the
+  tag), and only when the trim or safe area moved.
+- **Page size or dpi changed:** the update is refused and nothing changes,
+  because resizing the canvas would shift or rescale the art.
+- **Undo:** the whole update is one history step, "Update comic frames". If
+  anything fails partway, it rolls back.
+
+**Test.** A harness ran the real script with the file picker and the alert
+swapped for a fixed path and a log file. Results were read back by
+ExtendScript over COM.
+
+Test page `page_09`, 6 panels, seed 48213:
+1. **Fresh import** with the untagged `page_07.psd` active made a new document,
+   `page_09`, and left `page_07` alone.
+2. **Test art:** a rectangle painted in Frame 1 › Sketch
+   (400,400 → 2400,2000 px, running past the panel's right edge), and one in
+   Frame 4 › Color.
+3. **New layout, same page** (seed 777): all 6 frames were redrawn.
+   - The art layers kept their ids and pixel bounds, and their clipping.
+   - Panel 1 grew to the right, so art that used to be hidden under the gutter
+     now shows: the sample at 2300,1000 reads the art colour. The new gutter
+     reads white.
+   - Frame 4's art below the panel's new bottom edge is clipped away.
+   - It made one history step. Stepping back one state brought back the old
+     shapes (old layer ids).
+4. **Same file again:** "already matches … Nothing changed", and no history
+   step.
+5. **Hand edits, then 7 panels.** Before the run: Frame 2 renamed "Splash",
+   Border 3 deleted, art painted in Frame 6 › Ink.
+   - "Splash" was found and kept its name.
+   - Border 3 was made again on top of Frame 3.
+   - Frame 7 is new, placed under Frame 6.
+6. **4 panels:** frames 5–7 hidden, and Frame 6's art is still there.
+   **Back to 6:** frames 5 and 6 shown and redrawn; 7 stays hidden.
+7. **Refusal and new page:**
+   - A 170 mm wide trim was refused with the size message, and nothing changed.
+   - Page 10 with `page_09` active made a new document.
+
+**Bug found while testing (fixed):** setting `isClippingMask = false` on a
+layer that isn't clipped throws "El comando “Soltar máscara de recorte” no
+está disponible" ("Release Clipping Mask is not available"). The script now
+checks first (`unclip`). The rollback did its job here: the document came back
+exactly as it was before the failed run.
+
+**Worth knowing (design, not a bug):** frames follow panel **numbers**. When a
+new layout renumbers the panels (say, adding a panel to a BSP layout), the art
+in Frame 4 stays in Frame 4, so it moves to wherever panel 4 is now. In the
+7-panel test, Frame 4's art (drawn in the right column) ended up behind a
+left-column mask.
+- That's fine for nudging gutters or tweaking a layout.
+- After a big re-layout, expect to move art by hand.
+- A "match frames by position" option could come later if this bites.
+
+**Not changed:** a fresh import still leaves many history steps. Only updates
+are one step. A new document can just be closed.
+
 ## Files changed
 
 - `importers/photoshop/import_page.psjs`: top-level `await`; Border made
-  before the art layers, then moved above Ink; clipping set last.
+  before the art layers, then moved above Ink; clipping set last. After M2:
+  XMP tags on the hub's layers, and the update mode described above.
 - `core/cpb_core/svg/borders.py`, the `borders` CLI command, and
   `tests/test_borders.py`: the borders-only SVG for CSP.
 - `importers/README.md`: how to bring a page into CSP.
