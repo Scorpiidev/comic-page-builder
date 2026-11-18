@@ -26,11 +26,31 @@ def test_create_never_overwrites_an_existing_project(tmp_path):
 def test_blank_pages_and_round_trip(tmp_path):
     p = create_project(str(tmp_path), "Zine", reading="rtl", size=PageSize(148, 210), blank_pages=3, seed=1)
     assert [e.number for e in p.pages] == [1, 2, 3]
-    assert (tmp_path / "pages" / "002" / "page.svg").exists()
+    assert (tmp_path / "pages" / "002" / "page_02.svg").exists()
     again = load_project(str(tmp_path))
     assert again == p
     assert again.load_page(2).reading == "rtl"
     assert again.load_page(2).size.trim_w == 148
+
+
+def test_page_files_carry_the_page_number(tmp_path):
+    # Photoshop and Illustrator name documents after the file, so "page.svg" everywhere made every tab "page".
+    p = create_project(str(tmp_path), "C", blank_pages=1, seed=1)
+    p.save_page(page_from_bsp(123, p.size, 3, seed=1))
+    data = json.loads((tmp_path / "project.json").read_text())
+    assert [x["file"] for x in data["pages"]] == ["pages/001/page_01.svg", "pages/123/page_123.svg"]
+    assert (tmp_path / "pages" / "123" / "page_123.svg").exists()
+
+
+def test_old_page_svg_files_are_renamed_on_open(tmp_path):
+    p = create_project(str(tmp_path), "C", blank_pages=2, seed=1)
+    for n in (1, 2):  # make it look like a project from the first M3 hub
+        (tmp_path / "pages" / f"{n:03d}" / f"page_{n:02d}.svg").rename(tmp_path / "pages" / f"{n:03d}" / "page.svg")
+    (tmp_path / "pages" / "001" / "page.psd").write_bytes(b"art")  # the user's file: left alone
+    again = load_project(str(tmp_path))
+    assert sorted(x.name for x in (tmp_path / "pages" / "001").iterdir()) == ["page.psd", "page_01.svg"]
+    assert again.load_page(2).cells == p.load_page(2).cells
+    assert "page.svg" not in (tmp_path / "project.json").read_text()
 
 
 def test_batch_continues_numbering(tmp_path):

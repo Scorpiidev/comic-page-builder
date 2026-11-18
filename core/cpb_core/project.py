@@ -2,13 +2,17 @@
 Projects: a comic as a folder on disk.
 
     MyComic/
-        project.json          the manifest (this module reads and writes it)
-        pages/007/page.svg    one folder per page, so page.psd / page.ai sit beside it
+        project.json            the manifest (this module reads and writes it)
+        pages/007/page_07.svg   one folder per page, so page_07.psd / .ai sit beside it
         script/  characters/  environment/  reference/  exports/
 
 The manifest holds the project's defaults (page size, panel style, gutter,
-reading order) and the page list with each page's status. Each page.svg is
+reading order) and the page list with each page's status. Each page's SVG is
 still the truth for that page's own layout.
+
+The file carries the page number, not just the folder: Photoshop and
+Illustrator name a document after its file, so with every file called
+page.svg, three open pages all showed up as "page".
 """
 
 from __future__ import annotations
@@ -36,6 +40,15 @@ def _now() -> str:
     return datetime.now().isoformat(timespec="seconds")
 
 
+def page_file(number: int) -> str:
+    """A page's SVG relative to the project folder, with forward slashes (as stored).
+
+    The name matches what the hub shows (page_07), while the folder keeps
+    three digits so folders sort right in Explorer.
+    """
+    return f"pages/{number:03d}/page_{number:02d}.svg"
+
+
 @dataclass
 class PageEntry:
     number: int
@@ -44,8 +57,7 @@ class PageEntry:
 
     @property
     def file(self) -> str:
-        """Path relative to the project folder, with forward slashes (as stored)."""
-        return f"pages/{self.number:03d}/page.svg"
+        return page_file(self.number)
 
 
 @dataclass
@@ -65,7 +77,7 @@ class Project:
 
     # ---------- pages ----------
     def page_path(self, number: int) -> str:
-        return os.path.join(self.folder, "pages", f"{number:03d}", "page.svg")
+        return os.path.join(self.folder, *page_file(number).split("/"))
 
     def entry(self, number: int) -> PageEntry:
         for e in self.pages:
@@ -83,7 +95,7 @@ class Project:
         """
         Write a page into the project and record it in the manifest.
 
-        If the page.svg already exists, it's updated in place: anything added
+        If the page's SVG already exists, it's updated in place: anything added
         in another app (Illustrator, Inkscape...) is kept, per the ownership rule.
         """
         path = self.page_path(page.number)
@@ -225,7 +237,7 @@ def load_project(folder: str) -> Project:
         raise ValueError("this project was saved by a newer version; update Comic Page Builder")
     ps, st = data.get("page_size", {}), data.get("panel_style", {})
     try:
-        return Project(
+        project = Project(
             folder=folder, name=data["name"], chapter=data.get("chapter", "Chapter 1"),
             reading=data.get("reading_direction", "ltr"), work_scale=int(data.get("work_scale", 2)),
             paper=ps.get("paper", "Custom"),
@@ -240,6 +252,31 @@ def load_project(folder: str) -> Project:
         )
     except (KeyError, TypeError) as e:
         raise ValueError(f"{MANIFEST} is missing a value ({e})") from None
+    if _rename_old_page_files(project):
+        project.save()  # so project.json lists the new file names
+    return project
+
+
+def _rename_old_page_files(project: Project) -> bool:
+    """
+    The first M3 hub called every page file page.svg. Rename those once.
+
+    Only the hub's own page.svg is renamed: a page.psd or .ai beside it is
+    the user's file and stays as it is. A file that can't be renamed right
+    now (open in another app, say) is skipped and tried again next time.
+    Returns True if anything was renamed.
+    """
+    renamed = False
+    for e in project.pages:
+        new = project.page_path(e.number)
+        old = os.path.join(os.path.dirname(new), "page.svg")
+        if os.path.exists(old) and not os.path.exists(new):
+            try:
+                os.rename(old, new)
+                renamed = True
+            except OSError:
+                pass
+    return renamed
 
 
 def update_settings(project: Project, **changes) -> Project:

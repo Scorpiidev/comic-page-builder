@@ -146,8 +146,8 @@
         var path = "";
         try { path = doc.fullName.fsName; } catch (e) {}
         if (/\.svg$/i.test(path)) {
-            return doc.name + " is still the page.svg the hub wrote. Save it as an .ai file first " +
-                "(File > Save As): then File > Revert can take you back, and page.svg stays the hub's.";
+            return doc.name + " is still the SVG the hub wrote. Save it as an .ai file first " +
+                "(File > Save As): then File > Revert can take you back, and " + doc.name + " stays the hub's.";
         }
         if (!doc.saved) {
             return doc.name + " has unsaved changes. Illustrator undoes this update one step at a time, " +
@@ -240,10 +240,10 @@
         created["cpb-letters"].hasSelectedArtwork = false;
         doc.activeLayer = created["cpb-letters"];
 
-        // Illustrator would save this document back over page.svg as its own SVG.
+        // Illustrator would save this document back over the hub's SVG as its own SVG.
         return "Imported " + file.name + ": " + count + " panels.\n" +
             (report.length ? "\n" + report.join("\n") : "Layers: Guides, Letters, Panels, Paper.") +
-            "\n\nSave it as an .ai file (File > Save As) before you letter, so page.svg stays the hub's.";
+            "\n\nSave it as an .ai file (File > Save As) before you letter, so " + file.name + " stays the hub's.";
     }
 
     // ---------- update an existing document ----------

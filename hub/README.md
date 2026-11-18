@@ -31,7 +31,7 @@ PYTHONPATH=core:hub python -m comic_hub              # macOS / Linux
   the page), stroke colour and width, fill, corner radius, gutter, and
   **Layout options…** (random layouts with a lockable seed, the 36 presets,
   right-to-left numbering). The preview sits on neutral grey with the bleed
-  tinted. **Save page** writes `pages/NNN/page.svg` and keeps anything other
+  tinted. **Save page** writes `pages/NNN/page_NN.svg` and keeps anything other
   apps added to it; if a panel was reshaped elsewhere, it asks first.
 - Balloons (M5), Lettering (M4), Script and Exports are placeholders for now.
 

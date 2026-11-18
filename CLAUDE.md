@@ -39,7 +39,7 @@ Photoshop, Illustrator and Krita. The plan and every decision live in
 
 - **M3 done 2026-11-18** in the cloud session: the hub app in `hub/`
   (start with `hub\start_comic_hub.bat`) and `core/cpb_core/project.py`
-  (project.json, `pages/NNN/page.svg`). Screens: All projects (wizard +
+  (project.json, `pages/NNN/page_NN.svg`). Screens: All projects (wizard +
   settings), Pages (status groups, add, batch), Page builder (save keeps
   other apps' edits). It was only ever run headless on Linux, so **on
   Windows, please check**:
@@ -53,8 +53,11 @@ Photoshop, Illustrator and Krita. The plan and every decision live in
   pass after five small fixes: dialogs' title bars, a forced light theme
   under Windows dark mode, the window fitting the screen at 125 % / 150 %,
   typing `3.5` under a comma locale, and the wizard's trim row. Scaling was
-  emulated with `QT_SCALE_FACTOR`. Open questions, such as every file being
-  called `page.svg`, are at the end of `hub/WINDOWS_CHECK.md`.
+  emulated with `QT_SCALE_FACTOR`. Open questions are at the end of
+  `hub/WINDOWS_CHECK.md`.
+- **Page files renamed 2026-11-18** (Ivón's call): `pages/007/page_07.svg`
+  instead of `pages/007/page.svg`, so Photoshop and Illustrator tabs show
+  the page number. Old projects are renamed when they open.
 
 The previous work was done in a cloud session that can't reach this PC's
 apps. That's why you're here.

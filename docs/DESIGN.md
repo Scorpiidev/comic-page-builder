@@ -57,7 +57,7 @@ importers that turn those pages into native layers in each app.
                  │  lettering · balloons · svg  │
                  └──────────────┬───────────────┘
                                 │ writes / reads
-             project folder: project.json + pages/NNN/page.svg
+             project folder: project.json + pages/NNN/page_NN.svg
                                 │ read by
         ┌───────────────┬───────┴────────┬────────────────┐
         ▼               ▼                ▼                ▼
@@ -82,7 +82,7 @@ core/cpb_core/
     geometry.py      PageSize + PageGeometry: trim / bleed / safe / live rects  (M0, done)
     layouts/         cells + gutters + reading order, seeded BSP, presets, grid  (M0, done)
     model.py         Page, Panel, PanelStyle                                  (M1, done)
-    project.py       project folder + project.json, pages/NNN/page.svg, batches (M3, done)
+    project.py       project folder + project.json, pages/NNN/page_NN.svg, batches (M3, done)
     lettering/       font discovery, metrics, size advisor
     balloons/        balloon outline generation, text fitting
     svg/             writer.py, reader.py (round trip)
@@ -177,14 +177,20 @@ MyComic/
     script/                 the comic script lives here
     pages/
         001/
-            page.svg        panels + guides + balloons/letters (vector truth)
-            page.psd        art, made by the Photoshop importer
-            page_borders.svg  panel borders only, for Clip Studio Paint (§8.4)
+            page_01.svg     panels + guides + balloons/letters (vector truth)
+            page_01.psd     art, made by the Photoshop importer
+            page_01_borders.svg  panel borders only, for Clip Studio Paint (§8.4)
             thumb.png       written by the hub
         002/ ...
     characters/  environment/  reference/
     exports/
 ```
+
+The file names carry the page number, not just the folder. Photoshop and
+Illustrator name a document after its file, so when every file was
+`page.svg`, three open pages all showed up as "page" (found in the Windows
+check, `hub/WINDOWS_CHECK.md`). `load_project` renames an old `page.svg`
+once; the user's own files beside it are left alone.
 
 ### 5.2 `project.json`
 
@@ -372,7 +378,7 @@ cpb-paper      white canvas rect, so the file previews correctly anywhere
     Revert is the way back.
 
 ### 8.4 Clip Studio Paint
-- There's no public scripting API, so the route is to open `page.psd`.
+- There's no public scripting API, so the route is to open the page's PSD (`page_07.psd`).
   **Tested in M2** (`importers/M2_RESULTS.md`): CSP keeps the Frame folders,
   the names and the clipping, but turns the shape layers (Border, Mask) into
   raster layers.

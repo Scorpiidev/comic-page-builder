@@ -142,14 +142,21 @@ So the hub writes `page.svg` files the M2 importers read unchanged.
 
 ## For the cloud session to decide
 
-- **Every page file is called `page.svg`.** So Photoshop opens every page as a
-  document named "page", and Illustrator as "page.svg". With pages 3, 4 and 5
-  open, the tabs all look the same, and Save As suggests `page.psd` for all of
-  them. Suggestion: name the file after the page, inside its folder
-  (`pages/003/page_03.svg`), or have the importers name the document
-  `page_03`.
-- **The toast, breadcrumb and title bar say `page_03.svg`**, but the file is
-  `pages/003/page.svg`. These should agree, whichever name wins above.
+- **Done, Ivón's call: page files carry the page number.** Every page file
+  was called `page.svg`. So Photoshop opened every page as a document named
+  "page", and Illustrator as "page.svg", and Save As suggested `page.psd` for
+  all of them. The toast, breadcrumb and title bar also said `page_03.svg`
+  for a file that was really `pages/003/page.svg`. Now:
+  - the file is `pages/003/page_03.svg`, named by `project.page_file()`;
+  - `load_project` renames an old `page.svg` once, and leaves a `page.psd`
+    or `.ai` beside it alone;
+  - checked on `test/HubTest`: all 8 files were renamed on open, page 3's
+    too, while Illustrator had it open;
+  - a fresh import names the document `page_03` in Photoshop and
+    `page_03.svg` in Illustrator. Documents made before the rename still
+    update, because the importers match pages by number, not by file name;
+  - Illustrator's messages said "so page.svg stays the hub's". They now
+    use the real file name.
 - **Decimal commas:** the boxes follow Windows' number format (`168,0 mm`),
   but the status bar and toasts use Python formatting (`gutter 3 mm`,
   `seed 60840`). That's harmless, just mixed.
