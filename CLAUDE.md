@@ -13,8 +13,9 @@ Photoshop, Illustrator and Krita. The plan and every decision live in
   cells, seeded BSP, presets, grid).
 - **M1 done:** `core/cpb_core/svg/` writes and reads `page.svg`; CLI is
   `python -m cpb_core build | batch | info | papers`.
-- **M2 test ran 2026-11-18** in the local session: PS and AI import work, and
-  CSP keeps groups and clipping but rasterizes borders. Details and fixes are in
+- **M2 test ran 2026-11-18** in the local session: PS and AI import work. CSP
+  keeps the PSD's groups and clipping but rasterizes borders, while CSP's
+  Import → Vector of page.svg gives editable vector borders. Details and fixes are in
   `importers/M2_RESULTS.md`; the cloud session plans the next step from there.
   The original brief for that test follows. The import scripts were written but
   had never run in the real apps:

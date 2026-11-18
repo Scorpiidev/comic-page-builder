@@ -8,7 +8,7 @@ Test page: `python -m cpb_core build test/page_07.svg --panels 6 --seed 48213`
 |---|---|---|
 | Photoshop | 27.4.0 (Spanish UI) | **Works after 2 fixes** (below). Every checklist item passes. |
 | Illustrator | 30.2.1 (Spanish UI) | **Works as written.** Every checklist item passes. |
-| Clip Studio Paint | EX (4.0.3 per CLAUDE.md; not re-checked) | Groups, names and clipping survive. **Border and Mask layers arrive as raster.** |
+| Clip Studio Paint | EX (4.0.3 per CLAUDE.md; not re-checked) | From the PSD, groups, names and clipping survive, but **Border and Mask layers arrive as raster**. File → Import → Vector of `page.svg` gives **editable vector borders** at the exact position, all on one layer and mixed with the guides. |
 
 ## How it was run (no MCPs)
 
@@ -145,14 +145,45 @@ dropped. This needs a page with balloons (M5) to test.
   Expression color. The stroke looks right at 600 dpi, but its width and colour
   are no longer editable.
 
-What this means for the plan (DESIGN §8.4): the PSD route is fine for **art
-layers and structure** in CSP, but **panel borders won't stay editable vectors**.
-Changing a layout after painting would mean re-importing the borders, not
-editing them in CSP. Ideas to test next, none tried yet: does CSP's own
-File → Import accept SVG as vector? Is a raster border at print resolution
-simply good enough for Ivón's CSP pages?
+So through the PSD alone, CSP gets the **art layers and structure** but the
+**panel borders don't stay editable vectors**.
 
 A screenshot of CSP's Layers panel and canvas was shared with Ivón in the session.
+
+### Follow-up: CSP's File → Import → Vector… with `page.svg`
+
+Ivón asked for this test the same day. Imported `test/page_07.svg` into the
+open `page_07.psd` (no options dialog appeared).
+
+- **It arrives as a real vector layer**, one layer named after the file
+  (`page_07`), inserted above the selected layer. The thumbnail has CSP's
+  vector icon, Layer → Rasterize is *enabled*, and Layer Property offers the
+  vector tool navigation.
+- **Each panel is its own closed vector line.** The Object tool selects panel 2
+  alone, with control points at the corners. Tool Property shows brush size
+  **14.2 px** (0.6 mm at 600 dpi) and the dark stroke colour, both editable.
+- **The position is exact.** At 100% zoom, a crop of panel 2's corner with only
+  the vector showing matches the crop with only the PSD's raster Border 2
+  showing, so they agree within about 1 px (0.04 mm).
+- **Everything lands on that one layer:** panels, trim, safe area and crop
+  marks, plus the paper. The guides would print unless they're deleted by
+  hand.
+- **Dashes are lost.** Trim and safe come in as solid lines.
+- **Fill-only shapes turn into strokes.** CSP vector layers can't hold fills,
+  so the white `cpb-paper-fill` rect became a closed **white line 23.5 px
+  (≈ 1 mm) wide around the canvas edge**. That's SVG's default `stroke-width`
+  of 1 user unit, and our user unit is 1 mm. It sits in the bleed, but it would
+  paint over bleed art.
+- Not tested: rounded corners (this page has radius 0), and CSP's own
+  frame-border folders (an SVG can't create those).
+
+What this means for the plan (DESIGN §8.4): a CSP route that keeps borders
+editable looks like **PSD for the frames, art layers and clipping, plus
+Import → Vector of a borders-only SVG**. That SVG would hold just the panel
+paths, with stroke set and no paper, guides or fills, and would replace the
+raster Border layers. All panels share one vector layer, so it belongs above
+Comic Frames, not inside a Frame folder. The hub could write that file next
+to `page.svg`.
 
 ## Files changed
 
