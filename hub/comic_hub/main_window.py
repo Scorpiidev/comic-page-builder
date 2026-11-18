@@ -46,6 +46,7 @@ class MainWindow(QMainWindow):
         self.fwd_stack: list[str] = []
         self.setWindowTitle("Comic Hub")
         self.resize(1240, 820)
+        self._fit_to_screen()
 
         central = QWidget(); self.setCentralWidget(central)
         outer = QVBoxLayout(central); outer.setContentsMargins(7, 4, 7, 7); outer.setSpacing(6)
@@ -106,6 +107,24 @@ class MainWindow(QMainWindow):
         b = QToolButton(); b.setObjectName("RoundButton"); b.setIcon(icons.icon(icon, theme.ACCENT_TEXT, 14))
         b.setToolTip(tip); b.clicked.connect(slot)
         return b
+
+    def _fit_to_screen(self) -> None:
+        """Start no bigger than the screen's free area, and centred in it.
+
+        Sizes are in logical pixels, so at 125 % and 150 % display scaling
+        1240 × 820 needs 1550 × 1025 and 1860 × 1230 real pixels: taller than a
+        1080p screen. Windows then pushes the title bar above the top edge,
+        where it can't be grabbed to move the window.
+        """
+        area = self.screen().availableGeometry()  # the screen minus the taskbar
+        self.winId()  # makes the native window now, so Qt knows how big the title bar and borders are
+        m = self.windowHandle().frameMargins()
+        w = min(self.width(), area.width() - m.left() - m.right())
+        h = min(self.height(), area.height() - m.top() - m.bottom())
+        self.resize(w, h)
+        # move() places the outside of the frame, so centre the frame, not just the client area.
+        self.move(area.x() + (area.width() - w - m.left() - m.right()) // 2,
+                  area.y() + (area.height() - h - m.top() - m.bottom()) // 2)
 
     def toast(self, title: str, text: str) -> None:
         self.toast_widget.show_message(title, text)

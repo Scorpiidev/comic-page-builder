@@ -5,6 +5,7 @@ from PySide6.QtWidgets import QApplication
 from . import theme
 from .icons import mascot
 from .main_window import MainWindow
+from .winframe import tint_new_windows
 
 
 def main() -> int:
@@ -13,6 +14,7 @@ def main() -> int:
     app.setOrganizationName("Antares")
     app.setWindowIcon(mascot(64))
     theme.apply(app)
+    tint_new_windows(app)
     window = MainWindow()
     window.show()
     return app.exec()

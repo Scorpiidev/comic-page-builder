@@ -49,6 +49,12 @@ Photoshop, Illustrator and Krita. The plan and every decision live in
   - a page saved in the hub imports into Photoshop and Illustrator as before.
 
   Write what you find to `hub/WINDOWS_CHECK.md`, fix small things, commit, push.
+- **M3 Windows check done 2026-11-18** in the local session. All four points
+  pass after five small fixes: dialogs' title bars, a forced light theme
+  under Windows dark mode, the window fitting the screen at 125 % / 150 %,
+  typing `3.5` under a comma locale, and the wizard's trim row. Scaling was
+  emulated with `QT_SCALE_FACTOR`. Open questions, such as every file being
+  called `page.svg`, are at the end of `hub/WINDOWS_CHECK.md`.
 
 The previous work was done in a cloud session that can't reach this PC's
 apps. That's why you're here.
@@ -89,7 +95,7 @@ what changed in `M2_RESULTS.md`.
   with `cpb-`. Never delete anything else.
 - **Importers never compute geometry.** Each panel carries its final rect
   in `cpb:rect`.
-- Run `python -m pytest` before every commit (101 tests at last count; the hub tests need PySide6).
+- Run `python -m pytest` before every commit (105 tests at last count; the hub tests need PySide6).
   Golden files regenerate only on purpose: `CPB_UPDATE_GOLDEN=1`.
 - Don't touch `comicpagebuilder/` (the 0.13 plugin) until M6.
 - Commit messages explain the why. Ivón is learning Python, so code comments

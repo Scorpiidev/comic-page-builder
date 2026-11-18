@@ -60,6 +60,19 @@ class UnitSpinBox(QDoubleSpinBox):
         self._mm = value * MM_PER_UNIT[self._unit]
         self.mmChanged.emit(self._mm)
 
+    # The box follows the system's number format, so on a Spanish Windows it
+    # shows "3,5 mm". Qt then refuses a typed "3.5" without a word, and the
+    # numpad's decimal key types a dot. Reading a dot as the decimal point
+    # too is safe: these boxes never show thousands separators.
+    def _with_locale_point(self, text: str) -> str:
+        return text.replace(".", self.locale().decimalPoint())
+
+    def validate(self, text: str, pos: int):
+        return super().validate(self._with_locale_point(text), pos)
+
+    def valueFromText(self, text: str) -> float:
+        return super().valueFromText(self._with_locale_point(text))
+
 
 def page_svg(page: Page, guides: bool = True) -> str:
     svg = page_to_svg(page)

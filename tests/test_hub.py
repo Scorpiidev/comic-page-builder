@@ -15,7 +15,7 @@ pytest.importorskip("PySide6.QtWidgets")
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "hub"))
 
-from PySide6.QtCore import QSettings  # noqa: E402
+from PySide6.QtCore import QLocale, QSettings  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from comic_hub import theme  # noqa: E402
@@ -54,6 +54,25 @@ def test_unit_spin_box_never_changes_the_stored_value(app):
     box.set_unit("cm")
     box.setValue(21.0)  # typing 21 cm
     assert box.mm() == pytest.approx(210.0)
+
+
+@pytest.mark.parametrize("typed", ["3,5", "3.5", "3.5 mm"])
+def test_unit_spin_box_takes_a_dot_under_a_comma_locale(app, typed):
+    # On a Spanish Windows the box shows "3,5 mm", but the numpad types a dot.
+    box = UnitSpinBox(1.0, 0, 50)
+    box.setLocale(QLocale(QLocale.Spanish, QLocale.Spain))
+    box.lineEdit().selectAll()
+    box.lineEdit().insert(typed)
+    box.interpretText()
+    assert box.mm() == pytest.approx(3.5)
+
+
+def test_window_starts_inside_the_screen(app, tmp_path):
+    # 1240 × 820 is taller than a 1080p screen at 150 % scaling; the title bar must stay reachable.
+    w = MainWindow(QSettings(str(tmp_path / "settings.ini"), QSettings.IniFormat))
+    area = w.screen().availableGeometry()
+    assert w.height() <= area.height()
+    assert w.frameGeometry().top() >= area.top()
 
 
 def test_opening_a_project_shows_its_pages(window):

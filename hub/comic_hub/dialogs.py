@@ -115,7 +115,8 @@ class ProjectDialog(QDialog):
         self.paper.currentTextChanged.connect(self._paper_changed)
         self.trim_w.mmChanged.connect(lambda _: self._custom()); self.trim_h.mmChanged.connect(lambda _: self._custom())
         f2.addRow("Page size:", self.paper)
-        trim = QHBoxLayout(); trim.addWidget(self.trim_w); trim.addWidget(QLabel("×")); trim.addWidget(self.trim_h)
+        # Stretch the boxes, not the "×", or the label swallows the spare width.
+        trim = QHBoxLayout(); trim.addWidget(self.trim_w, 1); trim.addWidget(QLabel("×")); trim.addWidget(self.trim_h, 1)
         f2.addRow("Trim:", trim); f2.addRow("Bleed:", self.bleed); f2.addRow("Safe area:", self.safe)
         f2.addRow("Panel margin:", self.margin); f2.addRow("Resolution:", self.dpi); f2.addRow("You draw at:", self.scale)
         f2.addRow(_hint("These become the defaults for every new page. The lettering advisor uses the print size."))

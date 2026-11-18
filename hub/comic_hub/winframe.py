@@ -38,3 +38,15 @@ def tint_title_bar(widget, caption: str = "#f7ccdb", text: str = "#4a3340", bord
         return ok
     except Exception:  # an older Windows without these attributes: keep the default title bar
         return False
+
+
+def tint_new_windows(app) -> None:
+    """Tint every window the app opens (dialogs too), not just the main one.
+
+    A new window takes the focus as it opens, so a signal is enough. An event
+    filter would also work, but it would run Python for every event the app
+    gets.
+    """
+    if sys.platform != "win32":
+        return
+    app.focusWindowChanged.connect(lambda window: window is not None and tint_title_bar(window))

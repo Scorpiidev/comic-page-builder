@@ -162,9 +162,15 @@ QProgressBar::chunk {{ background: {PROGRESS}; }}
 
 def apply(app) -> None:
     """Apply the theme to a QApplication."""
+    from PySide6.QtCore import Qt
     from PySide6.QtGui import QColor, QPalette
+    # The theme is light. Without this, Qt follows Windows' dark mode: Fusion
+    # starts from a black palette, so whatever the stylesheet doesn't paint
+    # (radio dots, message boxes, the colour picker) and the dialogs' title
+    # bars come out dark.
+    app.styleHints().setColorScheme(Qt.ColorScheme.Light)
     app.setStyle("Fusion")  # a neutral base, so the stylesheet looks the same on every OS
-    pal = app.palette()
+    pal = app.style().standardPalette()
     # Anything the stylesheet doesn't reach (like tree branch areas) highlights pink, not Fusion blue.
     pal.setColor(QPalette.Highlight, QColor(SELECT_BORDER))
     pal.setColor(QPalette.HighlightedText, QColor(TEXT))
