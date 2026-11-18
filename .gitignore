@@ -3,3 +3,4 @@ __pycache__/
 comicpagebuilder/resources/data/user_presets.json
 comicpagebuilder/resources/layouts/user/*.json
 .pytest_cache/
+test/
