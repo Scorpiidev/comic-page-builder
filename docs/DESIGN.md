@@ -88,9 +88,8 @@ core/cpb_core/
     project.py       folder scaffold, manifest read and write
 hub/                 PySide6 app, theme/pink.qss, bundled UI font
 importers/
-    photoshop/import_page.jsx
-    illustrator/import_page.jsx
-    shared/json2.js  JSON polyfill: ExtendScript has no JSON object
+    photoshop/import_page.psjs   UXP script (Photoshop 27.4)          (M2, written)
+    illustrator/import_page.jsx  ExtendScript (Illustrator 30.2)      (M2, written)
     krita/           the current plugin, slimmed down to an importer
 tests/               pytest, plus "golden" SVG files to compare against
 docs/DESIGN.md
@@ -313,13 +312,17 @@ cpb-paper      white canvas rect, so the file previews correctly anywhere
 - Layers are matched by stable ids (`cpb-panel-3`), not by name, so
   renaming a layer by hand doesn't break anything.
 
-### 8.2 Photoshop (`import_page.jsx`)
-- Version 1 uses ExtendScript, run from **File → Scripts → Browse**. No
-  install, no signing. If it ever needs a docked panel, it can move to UXP.
-- Shape layers and vector masks are created through Action Manager code
-  (`executeAction`). Clipping masks are just `artLayer.grouped = true`.
-- Uses a bundled `json2.js`, because ExtendScript is ES3 and has no `JSON`.
-- Creates or updates `page.psd` next to `page.svg`.
+### 8.2 Photoshop (`import_page.psjs`)
+- A UXP script (Photoshop's current scripting, modern JavaScript), run from
+  **File → Scripts → Browse**. No install, no signing. Chosen over
+  ExtendScript because Ivón runs Photoshop 27.4, where UXP is the supported
+  route.
+- Each frame is a group: Border (shape layer with an editable stroke, made
+  with `batchPlay`), Ink / Color / Sketch (pixel layers, `isClippingMask`),
+  and Mask (white panel shape as the clipping base). Guides mark the trim
+  and safe area.
+- M2 version: always makes a new document. Re-importing into an existing
+  PSD without touching art layers comes after the test results.
 
 ### 8.3 Illustrator (`import_page.jsx`)
 - Opens `page.svg`, moves the groups into named layers, applies the clipping
@@ -502,7 +505,7 @@ The earlier rounded "cute" token set is kept below for reference only.
 |---|---|---|
 | M0 ✅ | Core skeleton and pytest | geometry, layouts and BSP are ported with tests (done: 50 tests, passing on Python 3.10 and 3.13; CI runs 3.10–3.13) |
 | M1 ✅ | SVG writer and reader, page build from the command line | golden and round-trip tests pass (done: `python -m cpb_core build / batch / info / papers`; 71 tests on Python 3.10 and 3.13) |
-| M2 | **Risk spike:** Photoshop and Illustrator importers, test opening the PSD in CSP | one page imports into PS and AI; CSP result written down |
+| M2 🧪 | **Risk spike (scripts written, waiting on the test in Ivón's apps):** Photoshop and Illustrator importers, test opening the PSD in CSP | one page imports into PS and AI; CSP result written down |
 | M3 | Hub app shell in pink Aero: projects (wizard + settings), pages (add + batch), page builder | build a page from the UI |
 | M4 | Lettering advisor + calibration sheet | test print done, presets saved |
 | M5 | Balloons with separate body/tail editing, on generated and imported pages | five kinds, text fitting, editable again later, image/PDF import |

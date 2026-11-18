@@ -1,0 +1,173 @@
+// Comic Page Builder: import a page.svg into Photoshop.
+//
+// Run it from File > Scripts > Browse… and pick this file (Photoshop 2023 or
+// newer; written against 27.4). It asks for a page.svg made by the hub and
+// builds a new document:
+//
+//   Comic Frames          group
+//     Frame N             group per panel, in reading order
+//       Border N          shape layer: editable stroke, no fill
+//       Ink / Color / Sketch   pixel layers, clipped to the mask below
+//       Mask N            shape layer: white panel shape (clipping base)
+//   Background            white paper
+//   + guides at the trim and safe area (guides never print)
+//
+// This is the M2 test version: it always makes a new document. Re-importing
+// into an existing PSD without touching your art comes after the test.
+
+const { app, core, action, constants } = require("photoshop");
+const { localFileSystem } = require("uxp").storage;
+
+// ---------- reading page.svg (only the hub's own attributes) ----------
+function attrs(tag) {
+  const out = {};
+  const re = /([\w:.-]+)="([^"]*)"/g;
+  let m;
+  while ((m = re.exec(tag))) out[m[1]] = m[2];
+  return out;
+}
+
+function readPage(text) {
+  const rootTag = text.match(/<svg\b[^>]*>/);
+  if (!rootTag) throw new Error("This file isn't an SVG.");
+  const root = attrs(rootTag[0]);
+  if (root["cpb:format"] !== "cpb-page") throw new Error("This SVG wasn't made by Comic Page Builder.");
+  if (Number(root["cpb:version"] || 1) > 1) throw new Error("This page was saved by a newer Comic Page Builder. Update the script.");
+  const num = (k) => {
+    const v = parseFloat(root["cpb:" + k]);
+    if (isNaN(v)) throw new Error("The page is missing its cpb:" + k + " value.");
+    return v;
+  };
+  const page = {
+    number: num("page"), trimW: num("trim-w"), trimH: num("trim-h"),
+    bleed: num("bleed"), safe: num("safe"), dpi: num("dpi"), panels: [],
+  };
+  page.canvasW = page.trimW + 2 * page.bleed;
+  page.canvasH = page.trimH + 2 * page.bleed;
+
+  const groupTag = text.match(/<g\b[^>]*id="cpb-panels"[^>]*>/);
+  page.radius = groupTag ? parseFloat(attrs(groupTag[0])["cpb:radius"] || "0") : 0;
+
+  const re = /<path\b[^>]*id="cpb-panel-\d+"[^>]*>/g;
+  let m;
+  while ((m = re.exec(text))) {
+    const a = attrs(m[0]);
+    if (!a["cpb:rect"]) throw new Error("Panel " + a.id + " has no cpb:rect. Rebuild the page with a newer hub.");
+    const [x, y, w, h] = a["cpb:rect"].trim().split(/\s+/).map(Number);
+    page.panels.push({
+      index: Number(a["cpb:index"]), x, y, w, h,
+      stroke: a.stroke || "#1b1b1b",
+      strokeWidth: parseFloat(a["stroke-width"] || "0.6"),
+      fill: a.fill && a.fill !== "none" ? a.fill : null,
+    });
+  }
+  if (!page.panels.length) throw new Error("The page has no panels.");
+  page.panels.sort((p, q) => p.index - q.index);
+  return page;
+}
+
+// ---------- helpers ----------
+const px = (mm, dpi) => (mm * dpi) / 25.4;
+const unit = (v) => ({ _unit: "pixelsUnit", _value: v });
+
+function rgb(hex) {
+  const n = parseInt(hex.replace("#", ""), 16);
+  return { _obj: "RGBColor", red: (n >> 16) & 255, grain: (n >> 8) & 255, blue: n & 255 };
+}
+
+function rectShape(r, radius) {
+  const shape = {
+    _obj: "rectangle", unitValueQuadVersion: 1,
+    top: unit(r.top), left: unit(r.left), bottom: unit(r.bottom), right: unit(r.right),
+  };
+  if (radius > 0) {
+    shape.topRight = unit(radius); shape.topLeft = unit(radius);
+    shape.bottomLeft = unit(radius); shape.bottomRight = unit(radius);
+  }
+  return shape;
+}
+
+// One shape layer (rectangle). `fill` and `stroke` are hex colours or null.
+async function makeShape(name, r, { fill, stroke, strokeWidth, radius }) {
+  const strokeStyle = {
+    _obj: "strokeStyle", strokeStyleVersion: 2,
+    strokeEnabled: !!stroke, fillEnabled: !!fill,
+  };
+  if (stroke) {
+    Object.assign(strokeStyle, {
+      strokeStyleLineWidth: unit(strokeWidth),
+      strokeStyleLineAlignment: { _enum: "strokeStyleLineAlignment", _value: "strokeStyleAlignCenter" },
+      strokeStyleLineCapType: { _enum: "strokeStyleLineCapType", _value: "strokeStyleButtCap" },
+      strokeStyleLineJoinType: { _enum: "strokeStyleLineJoinType", _value: "strokeStyleMiterJoin" },
+      strokeStyleContent: { _obj: "solidColorLayer", color: rgb(stroke) },
+      strokeStyleOpacity: { _unit: "percentUnit", _value: 100 },
+    });
+  }
+  await action.batchPlay([{
+    _obj: "make",
+    _target: [{ _ref: "contentLayer" }],
+    using: {
+      _obj: "contentLayer",
+      type: { _obj: "solidColorLayer", color: rgb(fill || "#ffffff") },
+      shape: rectShape(r, radius),
+      strokeStyle,
+    },
+  }], {});
+  const layer = app.activeDocument.activeLayers[0];
+  layer.name = name;
+  return layer;
+}
+
+// ---------- build ----------
+async function build(page, fileName) {
+  const d = page.dpi;
+  const W = Math.round(px(page.canvasW, d)), H = Math.round(px(page.canvasH, d));
+  const doc = await app.documents.add({
+    name: fileName.replace(/\.svg$/i, ""),
+    width: W, height: H, resolution: d,
+    mode: constants.NewDocumentMode.RGB,
+    fill: constants.DocumentFill.WHITE,
+  });
+
+  // Guides at trim and safe area: they never print.
+  const trim = [page.bleed, page.canvasW - page.bleed, page.bleed, page.canvasH - page.bleed];
+  const safe = [page.bleed + page.safe, page.canvasW - page.bleed - page.safe, page.bleed + page.safe, page.canvasH - page.bleed - page.safe];
+  for (const [x1, x2, y1, y2] of [trim, safe]) {
+    doc.guides.add(constants.Direction.VERTICAL, px(x1, d));
+    doc.guides.add(constants.Direction.VERTICAL, px(x2, d));
+    doc.guides.add(constants.Direction.HORIZONTAL, px(y1, d));
+    doc.guides.add(constants.Direction.HORIZONTAL, px(y2, d));
+  }
+
+  const frames = [];
+  const radius = px(page.radius, d);
+  // Build the last panel first so Frame 1 ends up at the top of the Layers panel.
+  for (const p of [...page.panels].reverse()) {
+    const r = { left: px(p.x, d), top: px(p.y, d), right: px(p.x + p.w, d), bottom: px(p.y + p.h, d) };
+    const mask = await makeShape(`Mask ${p.index}`, r, { fill: p.fill || "#ffffff", stroke: null, radius });
+    const sketch = await doc.createLayer({ name: "Sketch" });
+    const color = await doc.createLayer({ name: "Color" });
+    const ink = await doc.createLayer({ name: "Ink" });
+    for (const l of [sketch, color, ink]) l.isClippingMask = true;
+    const border = await makeShape(`Border ${p.index}`, r, {
+      fill: null, stroke: p.stroke, strokeWidth: px(p.strokeWidth, d), radius,
+    });
+    const group = await doc.createLayerGroup({ name: `Frame ${p.index}`, fromLayers: [border, ink, color, sketch, mask] });
+    frames.push(group);
+  }
+  await doc.createLayerGroup({ name: "Comic Frames", fromLayers: frames });
+  return { doc, W, H };
+}
+
+async function main() {
+  const file = await localFileSystem.getFileForOpening({ types: ["svg"] });
+  if (!file) return; // cancelled
+  const page = readPage(await file.read());
+  const result = await core.executeAsModal(() => build(page, file.name), { commandName: "Import comic page" });
+  await app.showAlert(
+    `Imported ${file.name}: ${page.panels.length} panels on a ` +
+    `${page.canvasW} × ${page.canvasH} mm canvas (${result.W} × ${result.H} px at ${page.dpi} dpi).`
+  );
+}
+
+main().catch((e) => app.showAlert("Comic Page Builder import failed:\n" + (e && e.message ? e.message : e)));

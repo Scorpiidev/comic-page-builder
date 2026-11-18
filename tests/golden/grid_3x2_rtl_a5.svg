@@ -21,11 +21,11 @@
     <rect id="cpb-paper-fill" x="0" y="0" width="158" height="220" fill="#ffffff" />
   </g>
   <g id="cpb-panels" inkscape:groupmode="layer" inkscape:label="Panels" cpb:gutter="4" cpb:reading="rtl" cpb:radius="0" cpb:layout="{&quot;cols&quot;:2,&quot;kind&quot;:&quot;grid&quot;,&quot;merges&quot;:[[[0,0],[0,1]]],&quot;rows&quot;:3}">
-    <path id="cpb-panel-1" cpb:index="1" cpb:cell="0 0 1 0.333333" d="M11 11H147V75H11Z" fill="none" stroke="#1b1b1b" stroke-width="0.6" stroke-linejoin="miter" />
-    <path id="cpb-panel-2" cpb:index="2" cpb:cell="0.5 0.333333 0.5 0.333333" d="M81 79H147V141H81Z" fill="none" stroke="#1b1b1b" stroke-width="0.6" stroke-linejoin="miter" />
-    <path id="cpb-panel-3" cpb:index="3" cpb:cell="0 0.333333 0.5 0.333333" d="M11 79H77V141H11Z" fill="none" stroke="#1b1b1b" stroke-width="0.6" stroke-linejoin="miter" />
-    <path id="cpb-panel-4" cpb:index="4" cpb:cell="0.5 0.666667 0.5 0.333333" d="M81 145H147V209H81Z" fill="none" stroke="#1b1b1b" stroke-width="0.6" stroke-linejoin="miter" />
-    <path id="cpb-panel-5" cpb:index="5" cpb:cell="0 0.666667 0.5 0.333333" d="M11 145H77V209H11Z" fill="none" stroke="#1b1b1b" stroke-width="0.6" stroke-linejoin="miter" />
+    <path id="cpb-panel-1" cpb:index="1" cpb:cell="0 0 1 0.333333" cpb:rect="11 11 136 64" d="M11 11H147V75H11Z" fill="none" stroke="#1b1b1b" stroke-width="0.6" stroke-linejoin="miter" />
+    <path id="cpb-panel-2" cpb:index="2" cpb:cell="0.5 0.333333 0.5 0.333333" cpb:rect="81 79 66 62" d="M81 79H147V141H81Z" fill="none" stroke="#1b1b1b" stroke-width="0.6" stroke-linejoin="miter" />
+    <path id="cpb-panel-3" cpb:index="3" cpb:cell="0 0.333333 0.5 0.333333" cpb:rect="11 79 66 62" d="M11 79H77V141H11Z" fill="none" stroke="#1b1b1b" stroke-width="0.6" stroke-linejoin="miter" />
+    <path id="cpb-panel-4" cpb:index="4" cpb:cell="0.5 0.666667 0.5 0.333333" cpb:rect="81 145 66 64" d="M81 145H147V209H81Z" fill="none" stroke="#1b1b1b" stroke-width="0.6" stroke-linejoin="miter" />
+    <path id="cpb-panel-5" cpb:index="5" cpb:cell="0 0.666667 0.5 0.333333" cpb:rect="11 145 66 64" d="M11 145H77V209H11Z" fill="none" stroke="#1b1b1b" stroke-width="0.6" stroke-linejoin="miter" />
   </g>
   <g id="cpb-letters" inkscape:groupmode="layer" inkscape:label="Letters" />
   <g id="cpb-guides" inkscape:groupmode="layer" inkscape:label="Guides" cpb:print="false">

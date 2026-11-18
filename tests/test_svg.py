@@ -74,6 +74,15 @@ def test_file_structure():
     assert guides.get(q(CPB, "print")) == "false"
 
 
+def test_panels_carry_their_final_rectangle_for_importers():
+    page = page_from_bsp(7, US, 5, seed=11, gutter=4)
+    root = ET.fromstring(page_to_svg(page))
+    by_index = {int(el.get(q(CPB, "index"))): el for el in root.iter(q(SVG, "path")) if el.get(q(CPB, "index"))}
+    for p in page.panels():
+        x, y, w, h = map(float, by_index[p.index].get(q(CPB, "rect")).split())
+        assert (x, y, w, h) == pytest.approx((p.rect.x, p.rect.y, p.rect.w, p.rect.h), abs=1e-3)
+
+
 def test_things_added_in_other_apps_survive_a_rebuild():
     text = page_to_svg(page_from_bsp(7, US, 5, seed=11))
     root = ET.fromstring(text)

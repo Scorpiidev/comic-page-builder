@@ -149,6 +149,8 @@ def apply_page(root: ET.Element, page: Page) -> None:
             "id": f"cpb-panel-{p.index}",
             q(CPB, "index"): str(p.index),
             q(CPB, "cell"): " ".join(frac(v) for v in (c.x, c.y, c.w, c.h)),
+            # Final rectangle in canvas mm, so importers never redo geometry.
+            q(CPB, "rect"): " ".join(num(v) for v in (p.rect.x, p.rect.y, p.rect.w, p.rect.h)),
             "d": panel_path(page, p.rect),
             "fill": st.fill or "none",
             "stroke": st.stroke,
