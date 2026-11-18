@@ -12,11 +12,12 @@ Photoshop, Illustrator and Krita. The plan and every decision live in
 - **M0 done:** `core/cpb_core/`: units, page geometry, layouts (gutter-free
   cells, seeded BSP, presets, grid).
 - **M1 done:** `core/cpb_core/svg/` writes and reads `page.svg`; CLI is
-  `python -m cpb_core build | batch | info | papers`.
-- **M2 test ran 2026-11-18** in the local session: PS and AI import work. CSP
-  keeps the PSD's groups and clipping but rasterizes borders, while CSP's
-  Import → Vector of page.svg gives editable vector borders. Details and fixes are in
-  `importers/M2_RESULTS.md`; the cloud session plans the next step from there.
+  `python -m cpb_core build | batch | info | papers | borders`.
+- **M2 done 2026-11-18** in the local session: PS and AI import work (two
+  PS fixes). CSP keeps the PSD's groups and clipping but rasterizes borders,
+  so `python -m cpb_core borders page.svg` now writes a borders-only SVG for
+  CSP's File → Import → Vector (tested, rounded corners too). Details are in
+  `importers/M2_RESULTS.md`.
   The original brief for that test follows. The import scripts were written but
   had never run in the real apps:
   - `importers/photoshop/import_page.psjs` (UXP script, Photoshop 27.4)
@@ -26,7 +27,7 @@ Photoshop, Illustrator and Krita. The plan and every decision live in
 The previous work was done in a cloud session that can't reach this PC's
 apps. That's why you're here.
 
-## Your job: run the M2 test
+## The M2 test brief (done 2026-11-18, kept for re-testing)
 
 1. Set up the testing MCPs (they're for testing only, not part of the product). Both need Node.js 20+:
    ```
@@ -62,7 +63,7 @@ what changed in `M2_RESULTS.md`.
   with `cpb-`. Never delete anything else.
 - **Importers never compute geometry.** Each panel carries its final rect
   in `cpb:rect`.
-- Run `python -m pytest` before every commit (72 tests at last count).
+- Run `python -m pytest` before every commit (79 tests at last count).
   Golden files regenerate only on purpose: `CPB_UPDATE_GOLDEN=1`.
 - Don't touch `comicpagebuilder/` (the 0.13 plugin) until M6.
 - Commit messages explain the why. Ivón is learning Python, so code comments

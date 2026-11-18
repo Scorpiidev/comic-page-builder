@@ -33,7 +33,32 @@ shape).
 The page opens with layers **Guides** (locked, non-printing), **Letters**,
 **Panels** (named Panel 1, Panel 2…) and **Paper** (locked).
 
+## Clip Studio Paint (tested with EX)
+
+CSP has no scripting, so a page arrives in two steps:
+
+1. Import the page into Photoshop (above) and save the PSD. Open the PSD in
+   CSP: the Frame folders, the names and the clipping come through, but the
+   Border layers arrive as raster.
+2. For editable vector borders, write a borders-only SVG:
+
+   ```
+   PYTHONPATH=core python -m cpb_core borders test/page_07.svg
+   ```
+
+   That writes `test/page_07_borders.svg`. In CSP, select **Comic Frames**,
+   then **File → Import → Vector…** and pick that file. You get one vector
+   layer, `page_07_borders`, sitting exactly on the frames. Delete the raster
+   **Border N** layers afterwards.
+
+Why a separate file: CSP's vector import puts everything in a file on one
+layer, so importing `page.svg` itself would bring the guides and paper along.
+
 ## M2 test: what to check and report back
+
+Done on 2026-11-18. The results, with the fixes they led to, are in
+[M2_RESULTS.md](M2_RESULTS.md). The checklist stays here for re-testing after
+importer changes.
 
 This milestone exists to find out what actually works. For each app, note:
 

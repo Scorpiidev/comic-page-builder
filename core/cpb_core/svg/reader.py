@@ -20,7 +20,7 @@ from typing import Optional, Union
 from ..geometry import PageSize
 from ..layouts.cells import Cell
 from ..model import Page, PanelStyle
-from .ns import CPB, FORMAT, FORMAT_VERSION, KNOWN_PREFIXES, SVG, is_owned, q
+from .ns import BORDERS_FORMAT, CPB, FORMAT, FORMAT_VERSION, KNOWN_PREFIXES, SVG, is_owned, q
 from .writer import LAYERS, apply_page, panel_path, serialize
 
 _NS_N = re.compile(r"^ns\d+$")
@@ -124,6 +124,8 @@ def parse_page(text: Union[str, bytes]) -> PageDocument:
 
     if root.tag != q(SVG, "svg"):
         raise ValueError("this file isn't an SVG")
+    if root.get(q(CPB, "format")) == BORDERS_FORMAT:
+        raise ValueError("this is a borders-only export for Clip Studio Paint; open the page.svg it was made from")
     if root.get(q(CPB, "format")) != FORMAT:
         raise ValueError("this SVG wasn't made by Comic Page Builder (it has no cpb:format attribute)")
     version = int(root.get(q(CPB, "version"), "1"))

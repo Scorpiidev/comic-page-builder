@@ -181,11 +181,46 @@ What this means for the plan (DESIGN §8.4): a CSP route that keeps borders
 editable looks like **PSD for the frames, art layers and clipping, plus
 Import → Vector of a borders-only SVG**. That SVG would hold just the panel
 paths, with stroke set and no paper, guides or fills, and would replace the
-raster Border layers. All panels share one vector layer, so it belongs above
-Comic Frames, not inside a Frame folder. The hub could write that file next
-to `page.svg`.
+raster Border layers.
+
+### Built and tested: `python -m cpb_core borders page.svg`
+
+Ivón said to keep going, so the core now writes that file: `page_07.svg` gives
+`page_07_borders.svg`. It keeps the same canvas and viewBox, holds one `<path>`
+per panel with the same path data as `page.svg`, uses `fill="none"`, and has no
+paper, guides, clip defs or letters. It is marked `cpb:format="cpb-borders"`,
+and the page reader refuses it with a clear message. Code is in
+`core/cpb_core/svg/borders.py`, with tests in `tests/test_borders.py` (79
+tests now).
+
+Tested end to end with a **rounded** page, because rounded corners hadn't been
+tried in either app:
+`build test/page_08.svg --panels 5 --seed 777 --radius 3`.
+
+- **Photoshop** imports rounded frames fine. All 5 frames have the usual stack,
+  and the clipping follows the curve: after filling Frame 1 › Color edge to
+  edge, a sample just outside the 3 mm curve reads 255,255,255 and one just
+  inside reads the fill.
+- **CSP**, with `page_08.psd` open and Comic Frames selected, then
+  Import → Vector of `page_08_borders.svg`:
+  - you get one vector layer, `page_08_borders`, at the top **inside** Comic
+    Frames, above Frame 1;
+  - there are **no guide lines and no paper outline** this time; the brush size
+    reads 14.2 px;
+  - at 100% the rounded corner is a single clean stroke. A crop with only the
+    vector showing matches a crop with only the PSD's raster Border showing,
+    in both place and thickness;
+  - each 3 mm arc arrives as about 6 control points rather than one curve.
+    It's smooth, just a little fiddlier to reshape.
+- Not done automatically: deleting the raster Border layers in CSP. That stays
+  a manual step (it's in `importers/README.md`).
 
 ## Files changed
 
 - `importers/photoshop/import_page.psjs`: top-level `await`; Border made
   before the art layers, then moved above Ink; clipping set last.
+- `core/cpb_core/svg/borders.py`, the `borders` CLI command, and
+  `tests/test_borders.py`: the borders-only SVG for CSP.
+- `importers/README.md`: how to bring a page into CSP.
+- `docs/DESIGN.md`: M2 marked done; §6, §8.4 and §15 updated with what the
+  test found.

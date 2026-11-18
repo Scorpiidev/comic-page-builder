@@ -7,6 +7,7 @@ Command-line tool: build pages without the hub.
     python -m cpb_core build grid.svg --layout grid --grid 3x2 --merge 0,0:0,1
     python -m cpb_core batch Pages --count 8 --min-panels 4 --max-panels 6
     python -m cpb_core info page_07.svg
+    python -m cpb_core borders page_07.svg      (vector borders for Clip Studio Paint)
 """
 
 from __future__ import annotations
@@ -24,7 +25,7 @@ from .layouts.bsp import MODES
 from .layouts.presets import load_presets
 from .model import Page, PanelStyle
 from .paper import PAPER_SIZES, paper_size
-from .svg import read_page, write_page
+from .svg import borders_file_name, read_page, write_borders, write_page
 
 PAGE_FILE = re.compile(r"^page_(\d+)\.svg$", re.IGNORECASE)
 DEFAULT_PRESET_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "comicpagebuilder", "resources", "layouts")
@@ -171,6 +172,20 @@ def cmd_info(a: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_borders(a: argparse.Namespace) -> int:
+    doc = read_page(a.page)
+    out = a.out or borders_file_name(a.page)
+    write_borders(doc.page, out)
+    count = len(doc.page.cells)
+    print(f"Wrote {out}: {count} panel border{'s' if count != 1 else ''} for Clip Studio Paint.")
+    print("  In CSP, open the page's PSD, then File > Import > Vector... and pick this file.")
+    if doc.modified_panels:
+        # Same rule as the importers: geometry comes from the layout, so the borders match the PSD.
+        print(f"  note: panels {', '.join(map(str, doc.modified_panels))} were reshaped in another app; "
+              "the borders follow the hub's layout, not those edits")
+    return 0
+
+
 def cmd_papers(_a: argparse.Namespace) -> int:
     for name, (w, h) in PAPER_SIZES.items():
         print(f"  {name:12} {w:g} x {h:g} mm")
@@ -200,6 +215,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     i = sub.add_parser("info", help="describe a page.svg")
     i.add_argument("page")
     i.set_defaults(func=cmd_info)
+
+    bd = sub.add_parser("borders", help="write a borders-only SVG for Clip Studio Paint")
+    bd.add_argument("page", help="a page.svg made by the hub")
+    bd.add_argument("-o", "--out", help="output file (default: next to the page, e.g. page_07_borders.svg)")
+    bd.set_defaults(func=cmd_borders)
 
     pp = sub.add_parser("papers", help="list named paper sizes")
     pp.set_defaults(func=cmd_papers)

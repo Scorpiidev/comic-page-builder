@@ -10,7 +10,9 @@ Ownership rule: the hub owns exactly the elements whose ``id`` starts with
 else alone, so things you add in Illustrator or Inkscape survive.
 """
 
+from .borders import borders_file_name, borders_svg, write_borders
 from .reader import PageDocument, parse_page, read_page
 from .writer import page_to_svg, write_page
 
-__all__ = ["PageDocument", "parse_page", "read_page", "page_to_svg", "write_page"]
+__all__ = ["PageDocument", "parse_page", "read_page", "page_to_svg", "write_page",
+           "borders_svg", "borders_file_name", "write_borders"]

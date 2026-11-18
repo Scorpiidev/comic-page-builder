@@ -1,8 +1,8 @@
 # Comic Pipeline: Design Doc
 
-**Status:** M0 and M1 done (core, page.svg writer/reader, command line). Decisions D6–D9 come from the clickable prototype.
+**Status:** M0, M1 and M2 done (core, page.svg writer/reader, command line, Photoshop and Illustrator importers tested in the real apps, CSP route found). Decisions D6–D9 come from the clickable prototype.
 **Author:** Antares
-**Last updated:** 2026-11-10
+**Last updated:** 2026-11-18
 **Prototype:** a clickable HTML prototype of the hub was used to settle the UX before building.
 
 Comic Page Builder grows into the page-building part of a solo comic
@@ -88,8 +88,9 @@ core/cpb_core/
     project.py       folder scaffold, manifest read and write
 hub/                 PySide6 app, theme/pink.qss, bundled UI font
 importers/
-    photoshop/import_page.psjs   UXP script (Photoshop 27.4)          (M2, written)
-    illustrator/import_page.jsx  ExtendScript (Illustrator 30.2)      (M2, written)
+    photoshop/import_page.psjs   UXP script (Photoshop 27.4)          (M2, tested)
+    illustrator/import_page.jsx  ExtendScript (Illustrator 30.2)      (M2, tested)
+    M2_RESULTS.md                what the M2 test found in PS, AI and CSP
     krita/           the current plugin, slimmed down to an importer
 tests/               pytest, plus "golden" SVG files to compare against
 docs/DESIGN.md
@@ -177,6 +178,7 @@ MyComic/
         001/
             page.svg        panels + guides + balloons/letters (vector truth)
             page.psd        art, made by the Photoshop importer
+            page_borders.svg  panel borders only, for Clip Studio Paint (§8.4)
             thumb.png       written by the hub
         002/ ...
     characters/  environment/  reference/
@@ -264,13 +266,13 @@ cpb-paper      white canvas rect, so the file previews correctly anywhere
 
 ## 6. Layer mapping per app
 
-| Concept | Photoshop | Illustrator | Krita | CSP (expected) |
+| Concept | Photoshop | Illustrator | Krita | CSP (tested in M2) |
 |---|---|---|---|---|
-| Panel border | **shape layer**, stroke and fill stay editable | path in layer `Panels` | vector layer per panel | via PSD, *probably rasterized* |
-| Frame clipping | layer group + **vector mask** from the panel path | clipping mask from `cpb-clip-N` | Mask layer + inherit alpha | via PSD |
-| Sketch / Ink / Color | raster layers, **clipping masks** (`layer.grouped = true`) | (not needed, art is in PS) | paint layers, inherit alpha | via PSD |
-| Balloon | shape layer + text layer | path + point text | vector layer | via PSD, rasterized |
-| Guides | layer group, hidden by default | layer, non-printing | vector layers | via PSD |
+| Panel border | **shape layer**, stroke and fill stay editable | path in layer `Panels` | vector layer per panel | **vector layer** from `page_borders.svg` (File → Import → Vector); the PSD's own borders arrive raster |
+| Frame clipping | layer group + **vector mask** from the panel path | clipping mask from `cpb-clip-N` | Mask layer + inherit alpha | via PSD: groups kept, Masks raster |
+| Sketch / Ink / Color | raster layers, **clipping masks** (`layer.grouped = true`) | (not needed, art is in PS) | paint layers, inherit alpha | via PSD: clipping kept |
+| Balloon | shape layer + text layer | path + point text | vector layer | via PSD, rasterized (not tested yet) |
+| Guides | layer group, hidden by default | layer, non-printing | vector layers | via PSD (not checked) |
 
 ---
 
@@ -330,11 +332,20 @@ cpb-paper      white canvas rect, so the file previews correctly anywhere
 - This is the natural place to finish lettering: live text, real vector
   balloons.
 
-### 8.4 Clip Studio Paint (next)
+### 8.4 Clip Studio Paint
 - There's no public scripting API, so the route is to open `page.psd`.
-- **Risk:** vector shapes and balloons will probably arrive rasterized
-  rather than as CSP-native balloons. **Test this in M2**, before planning
-  around it.
+  **Tested in M2** (`importers/M2_RESULTS.md`): CSP keeps the Frame folders,
+  the names and the clipping, but turns the shape layers (Border, Mask) into
+  raster layers.
+- For editable borders, the hub writes `page_borders.svg`
+  (`python -m cpb_core borders page.svg`), which you bring in with
+  **File → Import → Vector…**. CSP's vector import puts a whole file on one
+  layer, drops dashes and turns fills into 1 mm lines. So this file holds only
+  the panel outlines, with no paper, guides or fills. It lands exactly on the
+  PSD's frames, rounded corners included. Afterwards you delete the raster
+  Border layers.
+- Balloons via PSD are still expected to arrive rasterized. They could come in
+  the same way later (a letters-only SVG), once M5 exists.
 
 ### 8.5 Krita
 - The current plugin is reduced to an importer that calls `cpb_core`
@@ -505,7 +516,7 @@ The earlier rounded "cute" token set is kept below for reference only.
 |---|---|---|
 | M0 ✅ | Core skeleton and pytest | geometry, layouts and BSP are ported with tests (done: 50 tests, passing on Python 3.10 and 3.13; CI runs 3.10–3.13) |
 | M1 ✅ | SVG writer and reader, page build from the command line | golden and round-trip tests pass (done: `python -m cpb_core build / batch / info / papers`; 71 tests on Python 3.10 and 3.13) |
-| M2 🧪 | **Risk spike (scripts written, waiting on the test in Ivón's apps):** Photoshop and Illustrator importers, test opening the PSD in CSP | one page imports into PS and AI; CSP result written down |
+| M2 ✅ | Risk spike: Photoshop and Illustrator importers, test opening the PSD in CSP | one page imports into PS and AI; CSP result written down (done 2026-11-18: see `importers/M2_RESULTS.md`; plus `python -m cpb_core borders` for CSP vector borders; 79 tests) |
 | M3 | Hub app shell in pink Aero: projects (wizard + settings), pages (add + batch), page builder | build a page from the UI |
 | M4 | Lettering advisor + calibration sheet | test print done, presets saved |
 | M5 | Balloons with separate body/tail editing, on generated and imported pages | five kinds, text fitting, editable again later, image/PDF import |
@@ -519,11 +530,15 @@ onto the core; `core/` sits beside it and doesn't touch it.
 
 ## 15. Open questions and risks
 
-1. **CSP and PSD:** what survives the import? (M2)
+1. ~~**CSP and PSD:** what survives the import?~~ Answered in M2: structure
+   and clipping survive, borders go raster; vector borders come from
+   `page_borders.svg` (§8.4).
 2. **Illustrator SVG import:** how faithfully do `clipPath` and positioned
-   `tspan`s come through? (M2)
-3. **Photoshop on the user's version:** do shape layers and vector masks
-   work through Action Manager there? (M2)
+   `tspan`s come through? Still open: the M2 page had no letters or clip
+   references. Test it with M5's balloons.
+3. ~~**Photoshop on the user's version:** do shape layers and vector masks
+   work through Action Manager there?~~ Answered in M2: yes, on 27.4, after
+   two fixes.
 4. **Krita 5.3's bundled Python version:** sets the minimum Python version
    for the core. 3.10 is assumed; check it.
 5. **Font name matching across apps:** PostScript name versus family name.

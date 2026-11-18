@@ -12,6 +12,7 @@ CPB = "https://github.com/Scorpiidev/comic-page-builder/ns/1"
 
 FORMAT = "cpb-page"
 FORMAT_VERSION = 1
+BORDERS_FORMAT = "cpb-borders"  # borders-only export for Clip Studio Paint
 
 KNOWN_PREFIXES = {"": SVG, "xlink": XLINK, "inkscape": INKSCAPE, "sodipodi": SODIPODI, "cpb": CPB}
 for _prefix, _uri in KNOWN_PREFIXES.items():
