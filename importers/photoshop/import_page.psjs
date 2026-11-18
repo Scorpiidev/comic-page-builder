@@ -145,13 +145,20 @@ async function build(page, fileName) {
   for (const p of [...page.panels].reverse()) {
     const r = { left: px(p.x, d), top: px(p.y, d), right: px(p.x + p.w, d), bottom: px(p.y + p.h, d) };
     const mask = await makeShape(`Mask ${p.index}`, r, { fill: p.fill || "#ffffff", stroke: null, radius });
-    const sketch = await doc.createLayer({ name: "Sketch" });
-    const color = await doc.createLayer({ name: "Color" });
-    const ink = await doc.createLayer({ name: "Ink" });
-    for (const l of [sketch, color, ink]) l.isClippingMask = true;
+    // Make the Border while the Mask is selected. If an empty pixel layer
+    // (Ink) were selected, Photoshop would swap it for the new shape layer:
+    // Ink would vanish and the Border would inherit its clipping (M2 test).
     const border = await makeShape(`Border ${p.index}`, r, {
       fill: null, stroke: p.stroke, strokeWidth: px(p.strokeWidth, d), radius,
     });
+    const sketch = await doc.createLayer({ name: "Sketch" });
+    const color = await doc.createLayer({ name: "Color" });
+    const ink = await doc.createLayer({ name: "Ink" });
+    // The new art layers land above the Border (selecting the Mask first
+    // didn't change that in the M2 test), so lift the Border back above Ink.
+    // Clip only afterwards, so the art clips to the Mask, not to the Border.
+    border.move(ink, constants.ElementPlacement.PLACEBEFORE);
+    for (const l of [sketch, color, ink]) l.isClippingMask = true;
     const group = await doc.createLayerGroup({ name: `Frame ${p.index}`, fromLayers: [border, ink, color, sketch, mask] });
     frames.push(group);
   }
@@ -170,4 +177,6 @@ async function main() {
   );
 }
 
-main().catch((e) => app.showAlert("Comic Page Builder import failed:\n" + (e && e.message ? e.message : e)));
+// The await matters: Photoshop ends a script as soon as its top-level code
+// returns, so without it the import silently stops at the file picker.
+await main().catch((e) => app.showAlert("Comic Page Builder import failed:\n" + (e && e.message ? e.message : e)));

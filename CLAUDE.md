@@ -13,8 +13,11 @@ Photoshop, Illustrator and Krita. The plan and every decision live in
   cells, seeded BSP, presets, grid).
 - **M1 done:** `core/cpb_core/svg/` writes and reads `page.svg`; CLI is
   `python -m cpb_core build | batch | info | papers`.
-- **M2 in progress, needs YOU (the local session):** the import scripts are
-  written but have never run in the real apps:
+- **M2 test ran 2026-11-18** in the local session: PS and AI import work, and
+  CSP keeps groups and clipping but rasterizes borders. Details and fixes are in
+  `importers/M2_RESULTS.md`; the cloud session plans the next step from there.
+  The original brief for that test follows. The import scripts were written but
+  had never run in the real apps:
   - `importers/photoshop/import_page.psjs` (UXP script, Photoshop 27.4)
   - `importers/illustrator/import_page.jsx` (ExtendScript, Illustrator 30.2)
   - Clip Studio Paint EX 4.0.3 only gets tested by opening the saved PSD.
