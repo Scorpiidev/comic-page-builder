@@ -33,7 +33,25 @@ PYTHONPATH=core:hub python -m comic_hub              # macOS / Linux
   right-to-left numbering). The preview sits on neutral grey with the bleed
   tinted. **Save page** writes `pages/NNN/page_NN.svg` and keeps anything other
   apps added to it; if a panel was reshaped elsewhere, it asks first.
-- Balloons (M5), Lettering (M4), Script and Exports are placeholders for now.
+- Balloons (M5), Script and Exports are placeholders for now.
+
+## Lettering (M4)
+
+- **The font list** shows every installed font (system and "for me only"
+  installs), each name drawn in its own face, with its cap height and the
+  dialogue size it needs. Click the star to make it a favourite; **Favourites
+  only** hides the rest. The search box searches fonts on this screen.
+- **The preview** is a speech balloon at print size (100%) or zoomed, with
+  your own text.
+- **The advisor** takes the project's trim and the scale you draw at, and for
+  each role (dialogue, caption, whisper, SFX) gives the size to use at print
+  and the size to type in your canvas. Pick your own size and it tells you if
+  the letters will read too small. **Save as preset** stores the font and
+  size in the project.
+- **Calibration sheet…** makes a PDF with up to three fonts at six sizes
+  each. Print it at 100% ("Actual size"), check that the bar measures
+  100 mm, pick the smallest sample that reads well at arm's length and type
+  its code (like `A4`). That becomes the project's preset.
 
 On Windows 11 the title bar is tinted pink natively (`winframe.py`), so snap
 layouts and the rest of the window behaviour stay normal.
@@ -45,6 +63,8 @@ comic_hub/
     __main__.py     starts the app
     main_window.py  address bar, command bar, navigation, screens, status bar
     views.py        All projects, Pages, Page builder, placeholders
+    lettering_view.py  Lettering: font list, preview, size advisor, calibration dialog
+    calibration_pdf.py draws the calibration sheet to a real-size PDF
     dialogs.py      project wizard / settings, add page, batch, layout options
     widgets.py      UnitSpinBox (stores mm), page preview, thumbnails, toast
     theme.py        the pink Aero stylesheet and colour tokens

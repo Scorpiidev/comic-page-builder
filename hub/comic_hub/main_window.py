@@ -14,6 +14,7 @@ from cpb_core.project import Project, create_project, load_project, update_setti
 
 from . import icons, theme
 from .dialogs import AddPageDialog, BatchDialog, LayoutOptionsDialog, ProjectDialog
+from .lettering_view import CalibrationDialog, FontLibrary, LetteringView
 from .views import BuilderView, PagesView, PlaceholderView, ProjectsView
 from .widgets import Toast
 from .winframe import tint_title_bar
@@ -29,14 +30,13 @@ NAV = [  # (group, [(view, label, icon)])
 ]
 SOON = {
     "balloons": ("Balloons arrive in M5", "Speech, thought, shout, whisper and caption balloons, with the body and the tail edited separately, on generated and imported pages."),
-    "lettering": ("Lettering arrives in M4", "Your fonts with their real cap heights, the print size advisor, and the calibration sheet."),
     "script": ("Script view arrives in M7", "Link your comic script and see which pages each scene covers."),
     "exports": ("Exports", "For now, run the importers in Photoshop and Illustrator (see importers/README.md). Sending from the hub comes later."),
 }
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, settings: QSettings | None = None):
+    def __init__(self, settings: QSettings | None = None, fonts: FontLibrary | None = None):
         super().__init__()
         self.settings = settings or QSettings(ORG, APP)
         self.project: Project | None = None
@@ -91,7 +91,10 @@ class MainWindow(QMainWindow):
         self.pages_view.add_requested.connect(self.add_page)
         self.builder = BuilderView()
         self.builder.dirty_changed.connect(lambda _: self._update_title())
-        self.views = {"projects": self.projects_view, "pages": self.pages_view, "builder": self.builder}
+        self.lettering = LetteringView(self.settings, fonts)
+        self.lettering.status_changed.connect(self._update_title)
+        self.views = {"projects": self.projects_view, "pages": self.pages_view, "builder": self.builder,
+                      "lettering": self.lettering}
         for key, (title, text) in SOON.items():
             self.views[key] = PlaceholderView(title, text)
         for w in self.views.values():
@@ -186,7 +189,7 @@ class MainWindow(QMainWindow):
             self.nav.setCurrentItem(it)
 
     def go(self, view: str, record: bool = True) -> None:
-        if view in ("pages", "builder") and not self.project:
+        if view in ("pages", "builder", "lettering") and not self.project:
             view = "projects"
         if view == "builder" and self.selected is None:
             self.toast("No page selected", "Pick a page in Pages first, or add one.")
@@ -197,7 +200,10 @@ class MainWindow(QMainWindow):
         if record and view != self.view:
             self.back_stack.append(self.view)
             self.fwd_stack.clear()
+        searched = self._search_context()
         self.view = view
+        if self._search_context() != searched:
+            self._reset_search()
         if view == "projects":
             self.projects_view.set_projects(self.recent(), self.project.folder if self.project else None)
         elif view == "pages":
@@ -208,6 +214,8 @@ class MainWindow(QMainWindow):
             except (ValueError, OSError) as e:
                 QMessageBox.warning(self, "Can't open the page", f"page_{self.selected:02d} can't be read: {e}.")
                 return self.go("pages", record=False)
+        elif view == "lettering":
+            self.lettering.set_project(self.project)
         self.stack.setCurrentWidget(self.views[view])
         self.back_btn.setEnabled(bool(self.back_stack)); self.fwd_btn.setEnabled(bool(self.fwd_stack))
         self._sync_nav()
@@ -247,7 +255,27 @@ class MainWindow(QMainWindow):
         self.selected = number
         self._update_title()
 
+    # The search box looks through what's on screen: fonts on Lettering, pages everywhere else.
+    def _search_context(self) -> str:
+        return "fonts" if self.view == "lettering" else "pages"
+
+    def _reset_search(self) -> None:
+        self.search.blockSignals(True)
+        self.search.clear()
+        self.search.blockSignals(False)
+        self.search.setPlaceholderText("Search fonts" if self._search_context() == "fonts" else "Search pages")
+        if self.pages_view.filter:
+            self.pages_view.filter = ""
+            self.pages_view.refresh()
+        if self.lettering.filter:
+            self.lettering.filter = ""
+            self.lettering.refresh_table()
+
     def _search(self, text: str) -> None:
+        if self._search_context() == "fonts":
+            self.lettering.filter = text
+            self.lettering.refresh_table()
+            return
         if self.view != "pages" and text:
             self.go("pages")
         self.pages_view.filter = text
@@ -264,6 +292,8 @@ class MainWindow(QMainWindow):
                       ("builder", "Open in builder", lambda: self.go("builder"), False)],
             "builder": [("sliders", "Layout options…", self.layout_options, False), ("dice", "Roll layout", self.roll, False),
                         ("check", "Save page", self.save_page, True)],
+            "lettering": [("send", "Calibration sheet…", self.calibration, True), None,
+                          ("star", "Favourites only", self.favourites_only, False), ("search", "Rescan fonts", self.rescan_fonts, False)],
         }.get(self.view, [])
         if not cmds:
             bar.addWidget(QLabel("  Nothing to do here yet"))
@@ -278,6 +308,11 @@ class MainWindow(QMainWindow):
                 bar.widgetForAction(act).setProperty("primary", True)
             if label == "Project settings…":
                 act.setEnabled(self.project is not None)
+            if label == "Favourites only":
+                act.setCheckable(True)
+                act.setChecked(self.lettering.favorites_only)
+                act.triggered.disconnect()
+                act.toggled.connect(slot)
 
     def _update_title(self) -> None:
         name = self.project.name if self.project else "Comic Hub"
@@ -301,6 +336,10 @@ class MainWindow(QMainWindow):
                 f"seed {d.layout.get('seed')}" if d.layout.get("kind") == "bsp" else d.layout.get("kind", "custom")) + \
                 (" · unsaved changes" if star else "")
             title = f"Page builder · page_{d.number:02d}{star} · {name}"
+        elif self.view == "lettering" and self.project:
+            crumbs += [name, "Lettering"]
+            status = self.lettering.status_text()
+            title = f"Lettering · {name}"
         else:
             crumbs += [name, self.view.capitalize()]
             title = f"{self.view.capitalize()} · {name}"
@@ -439,6 +478,26 @@ class MainWindow(QMainWindow):
         self._update_title()
         self.toast("Saved", f"page_{d.number:02d}.svg saved with {len(d.cells)} panels.")
         return True
+
+    # ---------- lettering ----------
+    def calibration(self) -> None:
+        if not self.project:
+            return
+        if not self.lettering.library.entries:
+            QMessageBox.information(self, "No fonts found", "The hub couldn't find any fonts to put on the sheet.")
+            return
+        CalibrationDialog(self.lettering, self).exec()
+
+    def favourites_only(self, on: bool) -> None:
+        self.lettering.favorites_only = on
+        self.lettering.refresh_table()
+
+    def rescan_fonts(self) -> None:
+        self.lettering.library.load(force=True)
+        self.lettering.refresh_table()
+        lib = self.lettering.library
+        self.toast("Fonts rescanned", f"{len(lib.entries)} fonts found" +
+                   (f"; {len(lib.errors)} files couldn't be read." if lib.errors else "."))
 
     def closeEvent(self, event) -> None:
         if self.view == "builder" and not self._leave_builder():

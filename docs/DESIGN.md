@@ -204,9 +204,9 @@ once; the user's own files beside it are left alone.
                  "margin": 8, "dpi": 600 },
   "print_target": { "trim_w": 170, "trim_h": 260 },
   "panel_style": { "stroke": "#1b1b1b", "stroke_width_mm": 0.6, "fill": null },
-  "fonts": {
-    "dialogue": { "family": "Some Comic Font", "ps_name": "SomeComicFont-Regular",
-                  "size_pt": 8.0 }
+  "lettering": {
+    "dialogue": { "family": "Some Comic Font", "style": "Regular", "size_pt": 8.0,
+                  "cap_ratio": 0.72, "ps_name": "SomeComicFont-Regular" }
   },
   "pages": [
     { "number": 1, "dir": "pages/001", "status": "pencils", "layout": "6 frames 3 rows 2" }
@@ -430,12 +430,34 @@ never by the working canvas.
    real print size, pick the one that reads well, and save that as the
    project preset. This step is what actually prevents a repeat of last time.
 5. **Font discovery.** Scan the system and user font folders on Windows,
-   macOS and Linux with fontTools, and cache the names and metrics. Mark
-   favourites to tag your comic fonts. Google Fonts work like any other
-   installed font.
+   macOS and Linux, and cache the names and metrics. Mark favourites to tag
+   your comic fonts. Google Fonts work like any other installed font.
 6. **Fonts on other machines.** Text stays live in `page.svg`. Export offers
    **convert to outlines**. Check each indie font's licence, since some limit
    embedding, and outlines are usually the safe route for print files.
+
+### As built (M4, 2026-11-19)
+
+- **Font reading** is `core/cpb_core/lettering/fonts.py`: a small sfnt reader
+  in the standard library (TTF, OTF, TTC) instead of fontTools, so the core
+  keeps no dependencies. It reads only `head`, `name` and `OS/2`, so scanning
+  ~100 fonts takes about 10 ms, and caches by file time and size. Fonts whose
+  OS/2 table is too old to store a cap height (DejaVu, for one) are measured
+  by Qt in the hub, and the font list says "(measured)".
+- **Targets** (`advisor.py`): dialogue 2.1 mm cap height, caption 2.0,
+  whisper 1.6, SFX 4.5; warning below 1.5 mm. Sizes round to half points.
+  The working size is print size × the project's `work_scale` (1×, 2×, 3×),
+  which replaces `print_target`: you draw at a multiple of the trim.
+- **Calibration sheet** (`calibration.py` lays it out, the hub's
+  `calibration_pdf.py` draws it): A4 or Letter, up to three fonts (A, B, C),
+  six samples each from 1.5 pt under to 1 pt over the recommendation, a
+  100 mm bar to catch a printer that scaled the page. Samples have codes
+  ("A4"); typing the best one in the hub saves it as the project's preset
+  for that role. The PDF comes from Qt's PDF writer at 1200 dpi with the
+  fonts embedded, so its sizes are physical. `sheet_svg()` is a quick
+  preview whose text widths are only estimated.
+- **Presets** live in `project.json` under `"lettering"`, one per role, with
+  the family, style, size, cap ratio and PostScript name.
 
 ---
 
@@ -563,7 +585,7 @@ The earlier rounded "cute" token set is kept below for reference only.
 | M1 ✅ | SVG writer and reader, page build from the command line | golden and round-trip tests pass (done: `python -m cpb_core build / batch / info / papers`; 71 tests on Python 3.10 and 3.13) |
 | M2 ✅ | Risk spike: Photoshop and Illustrator importers, test opening the PSD in CSP | one page imports into PS and AI; CSP result written down (done 2026-11-18: see `importers/M2_RESULTS.md`; plus `python -m cpb_core borders` for CSP vector borders; 79 tests) |
 | M3 ✅ | Hub app shell in pink Aero: projects (wizard + settings), pages (add + batch), page builder | build a page from the UI (done 2026-11-18: `hub/`, `core/cpb_core/project.py`; 101 tests incl. headless hub tests) |
-| M4 | Lettering advisor + calibration sheet | test print done, presets saved |
+| M4 🟡 | Lettering advisor + calibration sheet | test print done, presets saved (built 2026-11-19: `core/cpb_core/lettering/`, the hub's Lettering screen and calibration PDF; 131 tests. Waiting on the real test print) |
 | M5 | Balloons with separate body/tail editing, on generated and imported pages | five kinds, text fitting, editable again later, image/PDF import |
 | M6 | Krita importer port | parity with 0.13 |
 | M7 | Pages board statuses, script link | a whole chapter runs through the hub |

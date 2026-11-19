@@ -7,6 +7,7 @@ them and call the same methods their buttons do.
 """
 
 import os
+import re
 import sys
 
 import pytest
@@ -20,8 +21,10 @@ from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from comic_hub import theme  # noqa: E402
 from comic_hub.dialogs import BatchDialog, LayoutOptionsDialog, ProjectDialog  # noqa: E402
+from comic_hub.lettering_view import CalibrationDialog, FontLibrary, font_for  # noqa: E402
 from comic_hub.main_window import MainWindow  # noqa: E402
 from comic_hub.widgets import UnitSpinBox  # noqa: E402
+from cpb_core.lettering import cap_height_mm, recommend_pt, working_pt  # noqa: E402
 from cpb_core.project import create_project, load_project  # noqa: E402
 from cpb_core.svg import read_page  # noqa: E402
 
@@ -36,7 +39,8 @@ def app():
 @pytest.fixture
 def window(app, tmp_path):
     project = create_project(str(tmp_path / "My Comic"), "My Comic", blank_pages=4, seed=3)
-    w = MainWindow(QSettings(str(tmp_path / "settings.ini"), QSettings.IniFormat))
+    settings = QSettings(str(tmp_path / "settings.ini"), QSettings.IniFormat)
+    w = MainWindow(settings, FontLibrary(settings, cache_path=str(tmp_path / "font-cache.json")))
     w.resize(1240, 820)
     w.show()
     w.open_project(project.folder, quiet=True)
@@ -162,3 +166,92 @@ def test_back_and_forward(window):
     assert window.view == "pages"
     window.go_forward()
     assert window.view == "projects"
+
+
+# ---------- M4: lettering ----------
+@pytest.fixture
+def lettering(window):
+    window.go("lettering")
+    lib = window.lettering.library
+    if not lib.entries:
+        pytest.skip("no fonts installed on this machine")
+    return window.lettering
+
+
+def test_lettering_recommends_a_size_and_saves_the_preset(window, lettering):
+    """M4's done-when, second half: presets saved."""
+    lettering.table.selectRow(0)
+    e = lettering.entry
+    rec = recommend_pt(e.cap_ratio, "dialogue")
+    assert lettering.size() == rec and lettering.big.text() == f"{rec:g} pt"
+    lettering._size_changed(rec - 2)
+    assert lettering.verdict.property("kind") in ("small", "bad")
+    lettering._use_recommended()
+    assert lettering.verdict.property("kind") == "good"
+    lettering._save_preset()
+    saved = load_project(window.project.folder).lettering["dialogue"]
+    assert (saved.family, saved.style, saved.size_pt) == (e.info.family, e.info.style, rec)
+    assert "Lettering" in window.windowTitle() and e.info.family in window.status.text()
+
+
+def test_working_size_follows_the_projects_scale(window, lettering):
+    lettering.table.selectRow(0)
+    lettering.scale.setCurrentIndex(2)  # drawing at 3×
+    assert load_project(window.project.folder).work_scale == 3
+    assert f"type {working_pt(lettering.size(), 3):g} pt" in lettering.cap_line.text()
+
+
+def test_font_search_and_favourites(window, lettering):
+    first = lettering.library.entries[0]
+    assert window.search.placeholderText() == "Search fonts"
+    window.search.setText(first.info.family[:4])
+    assert lettering._rows and all(first.info.family[:4].lower() in f"{e.info.family} {e.info.style}".lower()
+                                   for e in lettering._rows)
+    window.search.clear()
+    lettering._cell_clicked(0, 0)  # the star column
+    window.favourites_only(True)
+    assert [e.key for e in lettering._rows] == [lettering.library.entries[0].key]
+    window.favourites_only(False)
+    window.go("pages")  # the search box goes back to pages, empty
+    assert window.search.placeholderText() == "Search pages" and window.search.text() == ""
+
+
+def test_calibration_sheet_prints_at_real_size(window, lettering, tmp_path):
+    """M4's done-when, first half: the sheet for the test print."""
+    lettering.table.selectRow(0)
+    dlg = CalibrationDialog(lettering, window)
+    assert dlg.chosen() == [lettering.entry]  # the font on screen is ticked
+    path = str(tmp_path / "sheet.pdf")
+    dlg.write_pdf(dlg.sheet(), path)
+    data = open(path, "rb").read()
+    box = re.search(rb"/MediaBox \[\s*0 0 ([\d.]+) ([\d.]+)\s*\]", data)
+    # A4 is 595.28 × 841.89 pt; Qt writes PostScript's whole-point A4, which is how printers recognise the paper.
+    assert box and (float(box[1]), float(box[2])) == pytest.approx((595.28, 841.89), abs=0.5)
+    assert b"/FontFile2" in data or b"/FontFile3" in data  # the fonts travel with the PDF
+
+    # After the test print: type the code of the best sample.
+    dlg.code.setText("a5")
+    assert dlg.use.isEnabled()
+    sample = dlg.sheet().sample("A5")
+    dlg._use()
+    saved = load_project(window.project.folder).lettering["dialogue"]
+    assert saved.size_pt == sample.size_pt and lettering.size() == sample.size_pt
+    again = CalibrationDialog(lettering, window)  # the next sheet starts from the last one
+    assert again.chosen() == [lettering.entry]
+
+
+def test_unknown_sample_code_is_refused(window, lettering):
+    lettering.table.selectRow(0)
+    dlg = CalibrationDialog(lettering, window)
+    dlg.code.setText("Z9")
+    assert not dlg.use.isEnabled() and "No sample" in dlg.meaning.text()
+
+
+def test_pdf_text_has_the_physical_cap_height(lettering, tmp_path):
+    """What the advisor promises is what the PDF draws: 8 pt caps measure cap_ratio × 8 pt."""
+    from PySide6.QtGui import QFontMetricsF, QPdfWriter
+    writer = QPdfWriter(str(tmp_path / "m.pdf"))
+    writer.setResolution(1200)
+    for e in lettering.library.entries[:5]:
+        cap = QFontMetricsF(font_for(e.info, 8.0), writer).capHeight() / (1200 / 25.4)
+        assert cap == pytest.approx(cap_height_mm(8.0, e.cap_ratio), abs=0.05)

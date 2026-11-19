@@ -31,6 +31,8 @@ DANGER = "#c8323a"
 DANGER_SOFT = "#ffe5e6"
 OK = "#237550"
 OK_SOFT = "#e1f5ea"
+WARN = "#a8640f"
+WARN_SOFT = "#fff4e5"
 
 STATUS_LABELS = {"thumbs": "Thumbs", "pencils": "Pencils", "inks": "Inks",
                  "colors": "Colors", "letters": "Letters", "done": "Done"}
@@ -150,6 +152,12 @@ QStatusBar::item {{ border: 0; }}
 #BigTitle {{ font-size: 16pt; font-weight: 300; }}
 #Verdict[kind="bad"] {{ background: {DANGER_SOFT}; border: 1px solid {DANGER}; border-radius: 3px; padding: 6px; }}
 #Verdict[kind="good"] {{ background: {OK_SOFT}; border: 1px solid {OK}; border-radius: 3px; padding: 6px; }}
+#Verdict[kind="small"] {{ background: {WARN_SOFT}; border: 1px solid {WARN}; border-radius: 3px; padding: 6px; }}
+#BigSize {{ font-size: 26pt; font-weight: 300; color: {ACCENT_TEXT}; }}
+QSlider::groove:horizontal {{ height: 4px; border-radius: 2px; background: {BORDER_SOFT}; }}
+QSlider::sub-page:horizontal {{ height: 4px; border-radius: 2px; background: {SELECT_BORDER}; }}
+QSlider::handle:horizontal {{ width: 11px; margin: -6px 0; border: 1px solid {BORDER_STRONG}; border-radius: 2px; background: {BUTTON}; }}
+QSlider::handle:horizontal:hover {{ background: {BUTTON_HOVER}; }}
 QProgressBar {{ border: 1px solid {BORDER_STRONG}; border-radius: 2px; background: #eeeeee; text-align: center; min-height: 14px; }}
 QProgressBar::chunk {{ background: {PROGRESS}; }}
 

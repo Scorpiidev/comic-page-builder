@@ -26,6 +26,7 @@ from typing import Callable, Optional
 
 from .build import page_from_bsp, plan_batch
 from .geometry import PageSize
+from .lettering import ROLES, LetteringPreset
 from .model import Page, PanelStyle
 from .svg import read_page, write_page
 
@@ -74,6 +75,8 @@ class Project:
     folders: tuple[str, ...] = FOLDERS
     pages: list[PageEntry] = field(default_factory=list)
     modified: str = field(default_factory=_now)
+    # Text role -> chosen font and size, e.g. {"dialogue": LetteringPreset(...)}.
+    lettering: dict = field(default_factory=dict)
 
     # ---------- pages ----------
     def page_path(self, number: int) -> str:
@@ -171,6 +174,7 @@ class Project:
             "panel_style": {"stroke": self.style.stroke, "stroke_width": self.style.stroke_width,
                             "fill": self.style.fill, "corner_radius": self.style.corner_radius},
             "gutter": self.gutter,
+            "lettering": {role: preset.to_json() for role, preset in sorted(self.lettering.items())},
             "folders": list(self.folders),
             "modified": self.modified,
             "pages": [{"number": e.number, "file": e.file, "status": e.status, "modified": e.modified}
@@ -247,6 +251,7 @@ def load_project(folder: str) -> Project:
                              fill=st.get("fill"), corner_radius=st.get("corner_radius", 0.0)),
             gutter=data.get("gutter", 3.0), folders=tuple(data.get("folders", FOLDERS)),
             modified=data.get("modified", _now()),
+            lettering={role: LetteringPreset.from_json(v) for role, v in data.get("lettering", {}).items()},
             pages=sorted((PageEntry(p["number"], p.get("status", "thumbs"), p.get("modified", _now()))
                           for p in data.get("pages", [])), key=lambda e: e.number),
         )
@@ -281,7 +286,7 @@ def _rename_old_page_files(project: Project) -> bool:
 
 def update_settings(project: Project, **changes) -> Project:
     """Change project defaults (name, size, style...). Existing pages keep their own size."""
-    allowed = {"name", "chapter", "reading", "work_scale", "paper", "size", "style", "gutter", "folders"}
+    allowed = {"name", "chapter", "reading", "work_scale", "paper", "size", "style", "gutter", "folders", "lettering"}
     bad = set(changes) - allowed
     if bad:
         raise ValueError(f"can't change: {', '.join(sorted(bad))}")
@@ -290,3 +295,11 @@ def update_settings(project: Project, **changes) -> Project:
         os.makedirs(os.path.join(updated.folder, sub), exist_ok=True)
     updated.save()
     return updated
+
+
+def set_lettering_preset(project: Project, role: str, preset: LetteringPreset) -> None:
+    """Save the project's font and size for a text role (dialogue, caption, whisper, sfx)."""
+    if role not in ROLES:
+        raise ValueError(f"role must be one of: {', '.join(ROLES)}")
+    project.lettering[role] = preset
+    project.save()

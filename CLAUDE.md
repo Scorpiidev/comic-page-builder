@@ -7,7 +7,7 @@ Photoshop, Illustrator and Krita. The plan and every decision live in
 `docs/DESIGN.md`. Read its section 1 (decisions D1–D9) and section 14
 (milestones) before changing anything.
 
-## Where things stand (2026-11-18)
+## Where things stand (2026-11-19)
 
 - **M0 done:** `core/cpb_core/`: units, page geometry, layouts (gutter-free
   cells, seeded BSP, presets, grid).
@@ -58,6 +58,37 @@ Photoshop, Illustrator and Krita. The plan and every decision live in
 - **Page files renamed 2026-11-18** (Ivón's call): `pages/007/page_07.svg`
   instead of `pages/007/page.svg`, so Photoshop and Illustrator tabs show
   the page number. Old projects are renamed when they open.
+- **M4 built 2026-11-19** in the cloud session, not finished yet. It has:
+  - `core/cpb_core/lettering/`: a font reader, the size advisor and the
+    calibration sheet layout;
+  - the hub's Lettering screen (`hub/comic_hub/lettering_view.py`);
+  - the calibration PDF (`calibration_pdf.py`);
+  - presets in `project.json` under `"lettering"`.
+
+  It only ran headless on Linux, with Linux fonts. **On Windows, please
+  check** and write the results to `hub/WINDOWS_CHECK.md` under "M4":
+  - The font list has Ivón's indie and Google fonts, including ones installed
+    "for me only" (`%LOCALAPPDATA%\Microsoft\Windows\Fonts`). Each name is
+    drawn in its own face, with the right style (Light vs Regular, Italic).
+    Watch for families with many weights: Qt on Windows may name them
+    differently from the font file. `font_for()` in `lettering_view.py`
+    handles that.
+  - A font marked "(measured)" gets a sensible cap height (about 0.65–0.75
+    em for most fonts).
+  - **Calibration sheet…** saves a PDF to `exports/`, opens it, and the PDF
+    lists the fonts as embedded (in Acrobat: File → Properties → Fonts).
+  - **The test print**, which is M4's done-when. Ask Ivón to:
+    1. print the dialogue sheet at 100% / "Actual size";
+    2. measure the 100 mm bar;
+    3. type the code of the best sample.
+
+    Check that `project.json` then has the preset. If the bar isn't 100 mm,
+    the print dialog scaled the page. That's a settings issue, not a bug,
+    but write it down.
+  - Each preset's `ps_name` is the name Photoshop and Illustrator show for
+    that font. Check one in each app. M5 balloons will rely on it.
+
+  Then mark M4 ✅ in `docs/DESIGN.md` §14 and here.
 
 The previous work was done in a cloud session that can't reach this PC's
 apps. That's why you're here.
@@ -98,7 +129,7 @@ what changed in `M2_RESULTS.md`.
   with `cpb-`. Never delete anything else.
 - **Importers never compute geometry.** Each panel carries its final rect
   in `cpb:rect`.
-- Run `python -m pytest` before every commit (105 tests at last count; the hub tests need PySide6).
+- Run `python -m pytest` before every commit (131 tests at last count; the hub tests need PySide6).
   Golden files regenerate only on purpose: `CPB_UPDATE_GOLDEN=1`.
 - Don't touch `comicpagebuilder/` (the 0.13 plugin) until M6.
 - Commit messages explain the why. Ivón is learning Python, so code comments

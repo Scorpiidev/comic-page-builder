@@ -10,7 +10,7 @@ from PySide6.QtGui import QColor, QIcon
 from PySide6.QtWidgets import (
     QAbstractItemView, QButtonGroup, QComboBox, QFormLayout, QFrame, QGroupBox, QHBoxLayout, QHeaderView,
     QLabel, QListView, QListWidget, QListWidgetItem, QPushButton, QRadioButton, QScrollArea, QSpinBox,
-    QSplitter, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 from cpb_core.build import rebuild
