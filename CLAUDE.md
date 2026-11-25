@@ -125,10 +125,13 @@ Photoshop, Illustrator and Krita. The plan and every decision live in
     The PS and AI importers don't handle the art layer yet.
   - Balloon text on the canvas is drawn as outlines (`QPainterPath.addText`):
     `drawText` under a scaled painter got ClearType colour fringes on Windows.
-  - Idea discussed with Ivón, not decided yet: a layout editor milestone
-    (knife cuts at any angle on the BSP split tree + inset/overlapping
-    panels), replacing the 0.13 click-the-gutter grid. Panels would become
-    polygons; the PS importer would need polygon frames.
+  - **Decided 2026-11-25 (Ivón):** a manual layout builder is wanted, and
+    the randomizer must not be the first tab or the default anywhere.
+    Still open (she's thinking it over): the approach. Proposed: knife cuts
+    at any angle on the split tree + inset/overlapping panels, replacing the
+    0.13 click-the-gutter grid. Panels would become polygons; the PS
+    importer would need polygon frames. Until then the hub still defaults to
+    random layouts (Layout options' first tab, Add page, wizard pages).
   - Next: letters (and art) in the PS and AI importers,
     then test in the real apps (open question 2 in DESIGN.md §15). Nice to
     have: zoom on the balloon canvas, undo.
