@@ -14,7 +14,7 @@ import json
 import os
 import re
 import xml.etree.ElementTree as ET
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Optional, Union
 
 from ..geometry import PageSize
@@ -59,6 +59,19 @@ class PageDocument:
         return [el for el in self.root.iter()
                 if el is not self.root and not is_owned(el)
                 and el.tag != q(SVG, "defs") and not inside_owned_item(el)]
+
+    def letters_svg(self, balloons) -> str:
+        """
+        Serialize with only the Letters layer rewritten to ``balloons``.
+
+        Saving lettering this way can't redraw a panel you reshaped in
+        Illustrator: panels, guides and paper stay exactly as they are in the file.
+        """
+        from .letters import apply_balloons
+        from .writer import _layer
+        apply_balloons(_layer(self.root, "cpb-letters", "Letters"), balloons)
+        self.page = replace(self.page, balloons=tuple(balloons) or None)
+        return serialize(self.root)
 
     def to_svg(self, page: Optional[Page] = None) -> str:
         """Serialize, after writing ``page`` (default: the page as read) into the tree."""

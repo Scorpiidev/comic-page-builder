@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import replace
 
 from PySide6.QtCore import QByteArray, QRectF, Qt, QTimer, Signal
@@ -74,11 +75,28 @@ class UnitSpinBox(QDoubleSpinBox):
         return super().valueFromText(self._with_locale_point(text))
 
 
-def page_svg(page: Page, guides: bool = True) -> str:
+_TEXT_WITH_SPANS = re.compile(r'(<text [^>]*?)>((?:<tspan[^>]*>.*?</tspan>)+)</text>', re.S)
+_SPAN = re.compile(r'<tspan x="([^"]+)" y="([^"]+)">(.*?)</tspan>', re.S)
+
+
+def qt_friendly(svg: str) -> str:
+    """
+    The same SVG, with each balloon line as its own <text>.
+
+    Qt's renderer follows SVG Tiny 1.2, which has no x/y on tspans, so it
+    runs a balloon's lines together on one line. Only what Qt draws is
+    changed: the file on disk keeps one text per balloon for Illustrator.
+    """
+    def split(m):
+        return "".join(f'{m.group(1)} x="{x}" y="{y}">{t}</text>' for x, y, t in _SPAN.findall(m.group(2)))
+    return _TEXT_WITH_SPANS.sub(split, svg)
+
+
+def page_svg(page: Page, guides: bool = True, qt: bool = True) -> str:
     svg = page_to_svg(page)
     if not guides:
         svg = svg.replace('id="cpb-guides"', 'id="cpb-guides" display="none"', 1)
-    return svg
+    return qt_friendly(svg) if qt else svg
 
 
 def page_thumbnail(page: Page, width: int = 64) -> QPixmap:

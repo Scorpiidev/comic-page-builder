@@ -106,9 +106,16 @@ Photoshop, Illustrator and Krita. The plan and every decision live in
     `<text>` in memory first (the file keeps tspans for Illustrator). Also,
     `QT_QPA_PLATFORM=offscreen` on Windows has no fonts (text draws as
     boxes), so check text rendering with the normal platform.
-  - Next: the hub's Balloons screen, image/PDF page import (D7), letters in
-    the PS and AI importers, then test in the real apps (open question 2 in
-    DESIGN.md §15).
+  - **Balloons screen done 2026-11-25** (`hub/comic_hub/balloons_view.py`):
+    canvas that paints balloons itself with Qt's real font widths, body
+    handles (pink) and tail handles (blue), inspector, keyboard, size check.
+    **Save letters** uses `Project.save_balloons`, which rewrites only the
+    Letters layer. Checked on Windows with a real window screenshot.
+  - Assumption to confirm with Ivón: page mm are print mm, so a balloon's
+    font size is the preset's print size (work_scale isn't applied).
+  - Next: image/PDF page import (D7), letters in the PS and AI importers,
+    then test in the real apps (open question 2 in DESIGN.md §15). Nice to
+    have: zoom on the balloon canvas, undo.
 
 The previous work was done in a cloud session that can't reach this PC's
 apps. That's why you're here.
@@ -149,7 +156,7 @@ what changed in `M2_RESULTS.md`.
   with `cpb-`. Never delete anything else.
 - **Importers never compute geometry.** Each panel carries its final rect
   in `cpb:rect`.
-- Run `python -m pytest` before every commit (157 tests at last count; the hub tests need PySide6).
+- Run `python -m pytest` before every commit (162 tests at last count; the hub tests need PySide6).
   Golden files regenerate only on purpose: `CPB_UPDATE_GOLDEN=1`.
 - Don't touch `comicpagebuilder/` (the 0.13 plugin) until M6.
 - Commit messages explain the why. Ivón is learning Python, so code comments

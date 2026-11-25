@@ -175,6 +175,29 @@ def test_words_changed_in_another_app_win():
     assert doc.page.balloons[0].text == "GOODBYE"
 
 
+def test_saving_letters_leaves_panels_edited_elsewhere_alone():
+    svg = page_to_svg(page_with())
+    # Reshape panel 1 the way Illustrator would.
+    svg = re.sub(r'(id="cpb-panel-1"[^>]*? d=")[^"]+"', r'\1M10 10L90 10L50 90Z"', svg, count=1)
+    doc = parse_page(svg)
+    assert doc.modified_panels == [1]
+    out = doc.letters_svg([speech()])
+    again = parse_page(out)
+    assert again.modified_panels == [1] and [b.number for b in again.page.balloons] == [1]
+
+
+def test_project_saves_balloons_and_picks_fonts_from_presets(tmp_path):
+    from cpb_core.lettering import LetteringPreset
+    from cpb_core.project import create_project
+    p = create_project(str(tmp_path / "C"), "C", blank_pages=1, seed=1)
+    assert p.balloon_font("dialogue") is None
+    p.lettering["dialogue"] = LetteringPreset("Comic Neue", "Bold", 8.5, 0.71, "ComicNeue-Bold")
+    f = p.balloon_font("whisper")  # no whisper preset: falls back to dialogue
+    assert (f.family, f.style, f.size_pt, f.ps_name) == ("Comic Neue", "Bold", 8.5, "ComicNeue-Bold")
+    p.save_balloons(1, [speech(font=f)])
+    assert p.load_page(1).balloons[0].font == f
+
+
 def test_two_balloons_cant_share_a_number():
     with pytest.raises(ValueError):
         page_with(speech(), speech())

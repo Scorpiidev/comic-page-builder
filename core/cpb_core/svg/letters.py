@@ -65,7 +65,7 @@ def balloon_element(b: Balloon) -> ET.Element:
     # The text as typed, line breaks included (ElementTree writes them as &#10;).
     g.set(q(CPB, "text"), b.text)
     f = b.font
-    g.set(q(CPB, "font"), json.dumps({"family": f.family, "ps_name": f.ps_name, "size_pt": _n(f.size_pt),
+    g.set(q(CPB, "font"), json.dumps({"family": f.family, "style": f.style, "ps_name": f.ps_name, "size_pt": _n(f.size_pt),
                                       "cap_ratio": _n(f.cap_ratio), "leading": _n(f.leading)},
                                      sort_keys=True, separators=(",", ":")))
     if b.tail is not None:
@@ -129,7 +129,8 @@ def read_balloons(layer: Optional[ET.Element]) -> tuple[tuple[Balloon, ...], lis
         fd = _json(g, "font") or {}
         text_el = next((c for c in g if c.tag == q(SVG, "text")), None)
         color = text_el.get("fill", "#1b1b1b") if text_el is not None else "#1b1b1b"
-        font = BalloonFont(family=fd.get("family", "Comic Neue"), ps_name=fd.get("ps_name", ""),
+        font = BalloonFont(family=fd.get("family", "Comic Neue"), style=fd.get("style", "Regular"),
+                           ps_name=fd.get("ps_name", ""),
                            size_pt=float(fd.get("size_pt", 8.0)), cap_ratio=float(fd.get("cap_ratio", 0.7)),
                            leading=float(fd.get("leading", 1.2)), color=color)
         td = _json(g, "tail")

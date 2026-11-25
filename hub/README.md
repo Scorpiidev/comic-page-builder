@@ -33,7 +33,7 @@ PYTHONPATH=core:hub python -m comic_hub              # macOS / Linux
   right-to-left numbering). The preview sits on neutral grey with the bleed
   tinted. **Save page** writes `pages/NNN/page_NN.svg` and keeps anything other
   apps added to it; if a panel was reshaped elsewhere, it asks first.
-- Balloons (M5), Script and Exports are placeholders for now.
+- Script and Exports are placeholders for now.
 
 ## Lettering (M4)
 
@@ -53,6 +53,25 @@ PYTHONPATH=core:hub python -m comic_hub              # macOS / Linux
   100 mm, pick the smallest sample that reads well at arm's length and type
   its code (like `A4`). That becomes the project's preset.
 
+## Balloons (M5, in progress)
+
+- Pick a page in **Pages**, then **Balloons** in the navigation pane.
+- **Add balloon** adds a speech balloon; its arrow menu has the other four
+  kinds (thought, shout, whisper, caption). Type the text in the inspector;
+  Enter makes a line break of your own, other breaks are automatic.
+- **Body and tail are separate:** drag inside a balloon to move the body,
+  and the tail's tip stays on the speaker unless **Tip follows body** is on.
+  The pink corners resize the body (the text re-wraps; **Fit to text** sizes
+  it to the text again). The blue handles are the tail: the hollow one is
+  where it leaves the body, the solid one is the tip.
+- **Keyboard:** Tab switches body / tail, arrows nudge 0.5 mm (Shift: 5 mm),
+  Delete removes.
+- Each balloon takes its font and size from the Lettering preset for its
+  text role, and the inspector shows the printed cap height with a warning
+  below 1.5 mm.
+- **Save letters** rewrites only the page's Letters layer: panels you
+  reshaped in Illustrator and your own additions stay as they are.
+
 On Windows 11 the title bar is tinted pink natively (`winframe.py`), so snap
 layouts and the rest of the window behaviour stay normal.
 
@@ -62,6 +81,7 @@ layouts and the rest of the window behaviour stay normal.
 comic_hub/
     __main__.py     starts the app
     main_window.py  address bar, command bar, navigation, screens, status bar
+    balloons_view.py  the Balloons screen: canvas with body/tail handles, inspector
     views.py        All projects, Pages, Page builder, placeholders
     lettering_view.py  Lettering: font list, preview, size advisor, calibration dialog
     calibration_pdf.py draws the calibration sheet to a real-size PDF

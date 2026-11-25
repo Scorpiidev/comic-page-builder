@@ -39,6 +39,7 @@ class Tail:
 @dataclass(frozen=True)
 class BalloonFont:
     family: str = "Comic Neue"
+    style: str = "Regular"     # "Bold", "Light Italic"...: the face within the family
     ps_name: str = ""          # what Photoshop and Illustrator call it (section 5.2)
     size_pt: float = 8.0       # at the canvas's own size, i.e. already the "working" size
     cap_ratio: float = 0.7     # cap height / em, from the lettering presets

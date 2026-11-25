@@ -35,6 +35,7 @@ PATHS = {
     "right": '<path d="M9 5l7 7-7 7"/>',
     "open": '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v1"/><path d="M3 19l3-8h16l-3 8z"/>',
     "alert": '<path d="M12 3 2 20h20z"/><path d="M12 10v4M12 17v.5"/>',
+    "trash": '<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/>',
     "lock": '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
 }
 

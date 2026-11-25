@@ -9,6 +9,7 @@ them and call the same methods their buttons do.
 import os
 import re
 import sys
+from dataclasses import replace
 
 import pytest
 
@@ -48,6 +49,72 @@ def window(app, tmp_path):
     yield w
     w.builder.saved = w.builder.draft  # nothing to ask about on close
     w.close()
+
+
+# ---------- balloons (M5) ----------
+def test_balloons_add_edit_and_save(window, app):
+    from PySide6.QtCore import QPointF
+    window.selected = 2
+    window.go("balloons")
+    v = window.balloons_view
+    assert window.view == "balloons" and v.balloons == []
+    window.add_balloon("speech")
+    b = v.selected()
+    assert b.kind == "speech" and b.lines and b.tail is not None
+    v.text.setPlainText("WHERE IS THE MAP?")
+    assert v.selected().text == "WHERE IS THE MAP?"
+    assert v.dirty and "*" in window.windowTitle()
+    # Drag the tip somewhere else: the body stays.
+    c = v.canvas
+    body = (v.selected().cx, v.selected().cy)
+    tip_px = c.to_px(QPointF(b.tail.tip_x, b.tail.tip_y))
+    c._drag = ("tip", c.to_mm(tip_px), v.selected())
+    target = c.to_px(QPointF(b.tail.tip_x + 10, b.tail.tip_y))
+    from PySide6.QtGui import QMouseEvent
+    from PySide6.QtCore import QEvent, Qt
+    c.mouseMoveEvent(QMouseEvent(QEvent.MouseMove, target, target, Qt.LeftButton, Qt.LeftButton, Qt.NoModifier))
+    moved = v.selected()
+    assert (moved.cx, moved.cy) == body and moved.tail.tip_x == pytest.approx(b.tail.tip_x + 10, abs=0.01)
+    assert window.save_letters() and not v.dirty
+    saved = read_page(window.project.page_path(2)).page.balloons
+    assert [x.text for x in saved] == ["WHERE IS THE MAP?"]
+
+
+def test_balloon_keyboard_and_resize(window, app):
+    from PySide6.QtCore import QEvent, Qt
+    from PySide6.QtGui import QKeyEvent
+    window.selected = 1
+    window.go("balloons")
+    v = window.balloons_view
+    v.add("thought")
+    c = v.canvas
+    b = v.selected()
+    key = lambda k, mod=Qt.NoModifier: c.keyPressEvent(QKeyEvent(QEvent.KeyPress, k, mod))
+    key(Qt.Key_Right, Qt.ShiftModifier)
+    assert v.selected().cx == pytest.approx(b.cx + 5) and v.selected().tail.tip_x == b.tail.tip_x  # tip stays
+    key(Qt.Key_Tab)
+    assert c.part == "tail"
+    key(Qt.Key_Down)
+    assert v.selected().tail.tip_y == pytest.approx(b.tail.tip_y + 0.5)
+    # Resizing turns auto-size off; Fit to text turns it back on.
+    v._replace(replace(v.selected(), rx=40, ry=30, auto_size=False))
+    assert not v.auto.isChecked()
+    v.fit_to_text()
+    assert v.selected().auto_size and v.selected().rx < 40
+    key(Qt.Key_Delete)
+    assert v.balloons == []
+    v.saved = tuple(v.balloons)
+
+
+def test_builder_save_keeps_the_balloons(window, app):
+    window.selected = 3
+    window.go("balloons")
+    window.add_balloon("caption")
+    window.save_letters()
+    window.go("builder")
+    window.builder.gutter.set_mm(6); window.builder._changed()
+    assert window.save_page()
+    assert len(read_page(window.project.page_path(3)).page.balloons) == 1
 
 
 def test_unit_spin_box_never_changes_the_stored_value(app):

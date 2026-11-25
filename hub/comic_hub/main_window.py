@@ -6,7 +6,7 @@ import os
 
 from PySide6.QtCore import QSettings, Qt
 from PySide6.QtWidgets import (
-    QFileDialog, QFrame, QHBoxLayout, QLabel, QLineEdit, QMainWindow, QMessageBox, QStackedWidget,
+    QFileDialog, QFrame, QHBoxLayout, QLabel, QLineEdit, QMainWindow, QMenu, QMessageBox, QStackedWidget,
     QToolBar, QToolButton, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
 )
 
@@ -14,6 +14,7 @@ from cpb_core.project import Project, create_project, load_project, update_setti
 
 from . import icons, theme
 from .dialogs import AddPageDialog, BatchDialog, LayoutOptionsDialog, ProjectDialog
+from .balloons_view import KIND_LABELS, BalloonsView
 from .lettering_view import CalibrationDialog, FontLibrary, LetteringView
 from .views import BuilderView, PagesView, PlaceholderView, ProjectsView
 from .widgets import Toast
@@ -29,7 +30,6 @@ NAV = [  # (group, [(view, label, icon)])
     ("Project", [("settings", "Project settings…", "gear"), ("script", "Script", "folder"), ("exports", "Exports", "send")]),
 ]
 SOON = {
-    "balloons": ("Balloons arrive in M5", "Speech, thought, shout, whisper and caption balloons, with the body and the tail edited separately, on generated and imported pages."),
     "script": ("Script view arrives in M7", "Link your comic script and see which pages each scene covers."),
     "exports": ("Exports", "For now, run the importers in Photoshop and Illustrator (see importers/README.md). Sending from the hub comes later."),
 }
@@ -93,8 +93,11 @@ class MainWindow(QMainWindow):
         self.builder.dirty_changed.connect(lambda _: self._update_title())
         self.lettering = LetteringView(self.settings, fonts)
         self.lettering.status_changed.connect(self._update_title)
+        self.balloons_view = BalloonsView()
+        self.balloons_view.dirty_changed.connect(lambda _: self._update_title())
+        self.balloons_view.status_changed.connect(self._update_title)
         self.views = {"projects": self.projects_view, "pages": self.pages_view, "builder": self.builder,
-                      "lettering": self.lettering}
+                      "balloons": self.balloons_view, "lettering": self.lettering}
         for key, (title, text) in SOON.items():
             self.views[key] = PlaceholderView(title, text)
         for w in self.views.values():
@@ -189,12 +192,12 @@ class MainWindow(QMainWindow):
             self.nav.setCurrentItem(it)
 
     def go(self, view: str, record: bool = True) -> None:
-        if view in ("pages", "builder", "lettering") and not self.project:
+        if view in ("pages", "builder", "balloons", "lettering") and not self.project:
             view = "projects"
-        if view == "builder" and self.selected is None:
+        if view in ("builder", "balloons") and self.selected is None:
             self.toast("No page selected", "Pick a page in Pages first, or add one.")
             view = "pages"
-        if self.view == "builder" and view != "builder" and not self._leave_builder():
+        if self.view != view and not self._leave_editor():
             self._sync_nav()
             return
         if record and view != self.view:
@@ -214,6 +217,16 @@ class MainWindow(QMainWindow):
             except (ValueError, OSError) as e:
                 QMessageBox.warning(self, "Can't open the page", f"page_{self.selected:02d} can't be read: {e}.")
                 return self.go("pages", record=False)
+        elif view == "balloons":
+            try:
+                self.balloons_view.load(self.project, self.selected)
+            except (ValueError, OSError) as e:
+                QMessageBox.warning(self, "Can't open the page", f"page_{self.selected:02d} can't be read: {e}.")
+                return self.go("pages", record=False)
+            if self.balloons_view.edited_elsewhere:
+                n = self.balloons_view.edited_elsewhere
+                self.toast("Text changed in another app",
+                           f"Balloon{'s' if len(n) > 1 else ''} {', '.join(map(str, n))}: the words from the file are kept.")
         elif view == "lettering":
             self.lettering.set_project(self.project)
         self.stack.setCurrentWidget(self.views[view])
@@ -233,6 +246,32 @@ class MainWindow(QMainWindow):
             target = self.fwd_stack.pop()
             self.back_stack.append(self.view)
             self.go(target, record=False)
+
+    def _leave_editor(self) -> bool:
+        """Leaving the builder or the balloon editor: ask about unsaved changes. True means it's OK to leave."""
+        if self.view == "builder":
+            return self._leave_builder()
+        if self.view == "balloons":
+            return self._leave_balloons()
+        return True
+
+    def _ask_to_save(self, what: str) -> str:
+        """'save', 'discard' or 'cancel'."""
+        box = QMessageBox(QMessageBox.Question, "Unsaved changes", what, parent=self)
+        save = box.addButton("Save", QMessageBox.AcceptRole)
+        box.addButton("Don't save", QMessageBox.DestructiveRole)
+        cancel = box.addButton("Cancel", QMessageBox.RejectRole)
+        box.setDefaultButton(save)
+        box.exec()
+        return "cancel" if box.clickedButton() is cancel else "save" if box.clickedButton() is save else "discard"
+
+    def _leave_balloons(self) -> bool:
+        if not self.balloons_view.dirty:
+            return True
+        answer = self._ask_to_save(f"Save the balloons on page_{self.balloons_view.page.number:02d}?")
+        if answer == "save":
+            return self.save_letters()
+        return answer == "discard"
 
     def _leave_builder(self) -> bool:
         """Ask before throwing away unsaved builder changes. True means it's OK to leave."""
@@ -292,6 +331,8 @@ class MainWindow(QMainWindow):
                       ("builder", "Open in builder", lambda: self.go("builder"), False)],
             "builder": [("sliders", "Layout options…", self.layout_options, False), ("dice", "Roll layout", self.roll, False),
                         ("check", "Save page", self.save_page, True)],
+            "balloons": [("balloon", "Add balloon", None, True), ("trash", "Delete balloon", self.delete_balloon, False),
+                         None, ("check", "Save letters", self.save_letters, True)],
             "lettering": [("send", "Calibration sheet…", self.calibration, True), None,
                           ("star", "Favourites only", self.favourites_only, False), ("search", "Rescan fonts", self.rescan_fonts, False)],
         }.get(self.view, [])
@@ -303,7 +344,15 @@ class MainWindow(QMainWindow):
                 continue
             ic, label, slot, primary = c
             act = bar.addAction(icons.icon(ic), label)
-            act.triggered.connect(slot)
+            if slot is None:  # "Add balloon": a menu of the five kinds
+                menu = QMenu(self)
+                for kind, kind_label in KIND_LABELS.items():
+                    menu.addAction(kind_label, lambda k=kind: self.add_balloon(k))
+                act.setMenu(menu)
+                act.triggered.connect(lambda: self.add_balloon("speech"))
+                bar.widgetForAction(act).setPopupMode(QToolButton.MenuButtonPopup)
+            else:
+                act.triggered.connect(slot)
             if primary:
                 bar.widgetForAction(act).setProperty("primary", True)
             if label == "Project settings…":
@@ -336,6 +385,12 @@ class MainWindow(QMainWindow):
                 f"seed {d.layout.get('seed')}" if d.layout.get("kind") == "bsp" else d.layout.get("kind", "custom")) + \
                 (" · unsaved changes" if star else "")
             title = f"Page builder · page_{d.number:02d}{star} · {name}"
+        elif self.view == "balloons" and self.balloons_view.page:
+            n = self.balloons_view.page.number
+            star = " *" if self.balloons_view.dirty else ""
+            crumbs += [name, self.project.chapter, f"page_{n:02d}.svg", "Balloons"]
+            status = self.balloons_view.status_text()
+            title = f"Balloons · page_{n:02d}{star} · {name}"
         elif self.view == "lettering" and self.project:
             crumbs += [name, "Lettering"]
             status = self.lettering.status_text()
@@ -368,7 +423,7 @@ class MainWindow(QMainWindow):
             self.open_project(folder)
 
     def open_project(self, folder: str, quiet: bool = False) -> None:
-        if self.view == "builder" and not self._leave_builder():
+        if not self._leave_editor():
             return
         try:
             p = load_project(folder)
@@ -479,6 +534,28 @@ class MainWindow(QMainWindow):
         self.toast("Saved", f"page_{d.number:02d}.svg saved with {len(d.cells)} panels.")
         return True
 
+    # ---------- balloons ----------
+    def add_balloon(self, kind: str) -> None:
+        if self.balloons_view.page:
+            self.balloons_view.add(kind)
+
+    def delete_balloon(self) -> None:
+        self.balloons_view.delete_selected()
+
+    def save_letters(self) -> bool:
+        v = self.balloons_view
+        if not v.page or not self.project:
+            return False
+        try:
+            v.save()
+        except (ValueError, OSError) as e:
+            QMessageBox.warning(self, "Couldn't save the balloons", str(e).capitalize() + ".")
+            return False
+        self._update_title()
+        n = len(v.balloons)
+        self.toast("Saved", f"page_{v.page.number:02d}.svg saved with {n} balloon{'s' if n != 1 else ''}.")
+        return True
+
     # ---------- lettering ----------
     def calibration(self) -> None:
         if not self.project:
@@ -500,7 +577,7 @@ class MainWindow(QMainWindow):
                    (f"; {len(lib.errors)} files couldn't be read." if lib.errors else "."))
 
     def closeEvent(self, event) -> None:
-        if self.view == "builder" and not self._leave_builder():
+        if not self._leave_editor():
             event.ignore()
             return
         super().closeEvent(event)

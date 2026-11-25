@@ -24,6 +24,7 @@ from dataclasses import dataclass, field, replace
 from datetime import datetime
 from typing import Callable, Optional
 
+from .balloons import BalloonFont
 from .build import page_from_bsp, plan_batch
 from .geometry import PageSize
 from .lettering import ROLES, LetteringPreset
@@ -121,6 +122,32 @@ class Project:
             self.set_status(page.number, status, save=False)
         self.save()
         return e
+
+    def save_balloons(self, number: int, balloons) -> PageEntry:
+        """Write only a page's Letters layer (see PageDocument.letters_svg) and note it in the manifest."""
+        path = self.page_path(number)
+        text = read_page(path).letters_svg(balloons)
+        with open(path, "w", encoding="utf-8", newline="\n") as f:
+            f.write(text)
+        e = self.entry(number)
+        e.modified = _now()
+        self.save()
+        return e
+
+    def balloon_font(self, role: str) -> Optional[BalloonFont]:
+        """
+        The font a new balloon of this text role gets, from the Lettering presets.
+
+        None when the role has no preset yet. Page mm are print mm (pages are
+        built at the print trim size), so the preset's print size is used
+        as is; work_scale only matters when you type a size into a canvas
+        that's bigger than print.
+        """
+        preset = self.lettering.get(role) or (self.lettering.get("dialogue") if role != "sfx" else None)
+        if preset is None:
+            return None
+        return BalloonFont(family=preset.family, style=preset.style, ps_name=preset.ps_name,
+                           size_pt=preset.size_pt, cap_ratio=preset.cap_ratio)
 
     def new_page(self, panels: int = 5, *, mode: str = "auto", seed: Optional[int] = None,
                  status: str = "thumbs") -> Page:
