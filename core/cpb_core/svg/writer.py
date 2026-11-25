@@ -16,6 +16,8 @@ Layer stack, bottom to top (SVG paints later elements on top)::
 
 from __future__ import annotations
 
+import math
+
 import json
 import xml.etree.ElementTree as ET
 from typing import Optional
@@ -55,8 +57,43 @@ def panel_path(page: Page, rect: Rect) -> str:
 def panel_d(page: Page, panel) -> str:
     """A panel's outline: its polygon when it has one (manual layouts), else its rectangle."""
     if panel.points:
-        return "M" + "L".join(f"{num(x)} {num(y)}" for x, y in panel.points) + "Z"
+        return polygon_path(panel.points, page.style.corner_radius)
     return panel_path(page, panel.rect)
+
+
+def polygon_path(points, radius: float = 0.0) -> str:
+    """
+    A closed polygon, its corners rounded by ``radius`` (mm) with one cubic
+    curve each (M/L/C/Z only, so every importer can map it). A corner's
+    rounding is capped so it never eats more than half of either edge.
+    """
+    pts = list(points)
+    n = len(pts)
+    if radius <= 0 or n < 3:
+        return "M" + "L".join(f"{num(x)} {num(y)}" for x, y in pts) + "Z"
+    corners = []
+    for i in range(n):
+        prev, cur, nxt = pts[i - 1], pts[i], pts[(i + 1) % n]
+        u = (prev[0] - cur[0], prev[1] - cur[1]); v = (nxt[0] - cur[0], nxt[1] - cur[1])
+        lu, lv = math.hypot(*u), math.hypot(*v)
+        cos_a = max(-1.0, min(1.0, (u[0] * v[0] + u[1] * v[1]) / (lu * lv)))
+        angle = math.acos(cos_a)                      # the corner's inside angle
+        if angle > math.pi - 1e-3:                    # straight through: nothing to round
+            corners.append((cur, cur, cur, cur)); continue
+        t = min(radius / math.tan(angle / 2), lu / 2, lv / 2)   # how far the curve starts from the corner
+        r = t * math.tan(angle / 2)                   # the radius that actually fits
+        a = (cur[0] + u[0] / lu * t, cur[1] + u[1] / lu * t)
+        b = (cur[0] + v[0] / lv * t, cur[1] + v[1] / lv * t)
+        # Standard circle-arc handle length for a turn of (pi - angle).
+        h = 4 / 3 * math.tan((math.pi - angle) / 4) * r
+        c1 = (a[0] - u[0] / lu * h, a[1] - u[1] / lu * h)
+        c2 = (b[0] - v[0] / lv * h, b[1] - v[1] / lv * h)
+        corners.append((a, c1, c2, b))
+    f = lambda p: f"{num(p[0])} {num(p[1])}"
+    d = "M" + f(corners[0][3])
+    for a, c1, c2, b in corners[1:] + corners[:1]:
+        d += "L" + f(a) + ("C" + f(c1) + " " + f(c2) + " " + f(b) if a != b else "")
+    return d + "Z"
 
 
 def _child(parent: ET.Element, tag: str, attrs: dict, index: Optional[int] = None) -> ET.Element:

@@ -6,7 +6,7 @@ import os
 from dataclasses import replace
 
 from PySide6.QtCore import QSize, Qt, Signal
-from PySide6.QtGui import QColor, QIcon, QKeySequence, QShortcut
+from PySide6.QtGui import QColor, QIcon, QKeySequence, QPixmap, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView, QButtonGroup, QCheckBox, QComboBox, QFormLayout, QFrame, QGroupBox, QHBoxLayout, QHeaderView,
     QLabel, QListView, QListWidget, QListWidgetItem, QPushButton, QRadioButton, QScrollArea, QSpinBox,
@@ -609,7 +609,9 @@ class BuilderView(QWidget):
         self.safe_warning.setText("The panel margin is smaller than the safe area, so panel edges may be trimmed in print.")
         self.safe_warning.setVisible(not inside)
         self.stroke.setText(self._stroke_color)
-        self.stroke.setStyleSheet(f"QPushButton {{ border-left: 14px solid {self._stroke_color}; }}")
+        # A swatch icon: a thick left border fought the theme's rounded buttons and got clipped.
+        sw = QPixmap(14, 14); sw.fill(QColor(self._stroke_color))
+        self.stroke.setIcon(QIcon(sw))
         r = p.layout
         how = {"bsp": f"Random layout, seed {r.get('seed')} ({r.get('mode')})", "preset": f"Preset {r.get('name')}",
                "grid": "Grid", "manual": "Hand-cut layout"}.get(r.get("kind"), "Custom cells")

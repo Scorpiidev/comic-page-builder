@@ -384,31 +384,33 @@ def from_cells(cells: Sequence[Cell]) -> Optional[dict]:
 # ---------- to millimetres ----------
 def _inset_polygon(points: Sequence[Point], offsets: Sequence[float]) -> list[Point]:
     """
-    Move each edge of a convex polygon inwards by its own distance and
-    re-intersect neighbours. Raises ValueError when the gutter swallows it.
+    Move each edge of a convex polygon inwards by its own distance. Raises
+    ValueError when the gutter swallows it.
+
+    Done as clipping: keep the part of the polygon on the inside of every
+    moved edge. Simply re-intersecting neighbouring edges goes wrong when a
+    cut passes close to a corner: the tiny edge left there should vanish,
+    and re-intersecting pushes a point out past the panel instead.
     """
-    n = len(points)
     ccw = _area(points) > 0
-    lines = []
+    out = list(points)
+    flags = [False] * len(out)
+    n = len(points)
     for i in range(n):
+        d = offsets[i]
+        if d <= 0:
+            continue
         p, q = points[i], points[(i + 1) % n]
         dx, dy = q[0] - p[0], q[1] - p[1]
         length = math.hypot(dx, dy)
         # Inward normal: with a positive shoelace area the inside is to the left of each edge.
         nx, ny = (-dy / length, dx / length) if ccw else (dy / length, -dx / length)
-        d = offsets[i]
-        lines.append(((p[0] + nx * d, p[1] + ny * d), (q[0] + nx * d, q[1] + ny * d)))
-    out = []
-    for i in range(n):
-        (a1, a2), (b1, b2) = lines[i - 1], lines[i]
-        den = (a2[0] - a1[0]) * (b2[1] - b1[1]) - (a2[1] - a1[1]) * (b2[0] - b1[0])
-        if abs(den) < 1e-12:
-            out.append(b1)  # neighbours in a straight line: no corner here
-            continue
-        t = ((b1[0] - a1[0]) * (b2[1] - b1[1]) - (b1[1] - a1[1]) * (b2[0] - b1[0])) / den
-        out.append((a1[0] + (a2[0] - a1[0]) * t, a1[1] + (a2[1] - a1[1]) * t))
-    new_area = _area(out)
-    if (new_area > 0) != ccw or abs(new_area) < 1.0:  # under 1 mm² or turned inside out
+        a, b = (p[0] + nx * d, p[1] + ny * d), (q[0] + nx * d, q[1] + ny * d)
+        keep = 1 if _side(a, b, (a[0] + nx, a[1] + ny)) > 0 else -1
+        out, flags = _clip(out, flags, a, b, keep)
+        if len(out) < 3:
+            break
+    if len(out) < 3 or abs(_area(out)) < 1.0:  # under 1 mm²
         raise ValueError("the gutter is wider than a panel")
     return out
 

@@ -101,6 +101,29 @@ def test_sliding_a_cut_keeps_its_angle():
         knife.slide(layout, (-1, ()), 0.0, 0.9)                 # would push the bottom panel off the page
 
 
+def test_a_cut_near_a_corner_never_pokes_outside_the_panel():
+    # Ivón's screenshot: a diagonal that just misses an inset's corner drew past it.
+    layout = knife.add_inset(knife.empty(), 0.3, 0.5, 0.5, 0.3)
+    layout = knife.cut(layout, (0.299, 0.505), (0.8, 0.8))
+    page = page_manual(1, SIZE, layout, gutter=3)
+    live = page.geometry().live
+    x0, y0 = live.x + 0.3 * live.w, live.y + 0.5 * live.h
+    for p in page.panels():
+        if p.on_top:
+            for x, y in p.points:
+                assert x0 - 1e-6 <= x <= x0 + 0.5 * live.w + 1e-6 and y0 - 1e-6 <= y <= y0 + 0.3 * live.h + 1e-6
+
+
+def test_hand_cut_panels_get_rounded_corners():
+    from cpb_core.svg.writer import polygon_path
+    square = [(0, 0), (10, 0), (10, 10), (0, 10)]
+    assert "C" not in polygon_path(square, 0)
+    d = polygon_path(square, 2)
+    assert d.count("C") == 4 and "M2 0" in d.replace(",", " ") or d.startswith("M")
+    sharp = polygon_path([(0, 0), (10, 0), (0, 1)], 50)   # a huge radius is capped by the short edges
+    assert sharp.count("C") == 3
+
+
 def test_centred_cut_splits_the_panel_in_half():
     (p1, p2) = knife.centred(knife.SQUARE, (0.1, 0.2), (0.9, 0.2))
     assert p1[1] == pytest.approx(0.5) and p2[1] == pytest.approx(0.5)
