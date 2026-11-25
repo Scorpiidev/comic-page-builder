@@ -117,6 +117,55 @@ def test_builder_save_keeps_the_balloons(window, app):
     assert len(read_page(window.project.page_path(3)).page.balloons) == 1
 
 
+# ---------- drawn pages (M5, D7) ----------
+def _art_png(path, w=850, h=1300, dpi=150):
+    from PySide6.QtGui import QColor, QImage, QPainter
+    img = QImage(w, h, QImage.Format_RGB32); img.fill(QColor("#f4e1c1"))
+    p = QPainter(img); p.fillRect(40, 40, w // 2, h // 3, QColor("#3a6ea5")); p.end()
+    img.setDotsPerMeterX(round(dpi / 0.0254)); img.setDotsPerMeterY(round(dpi / 0.0254))
+    img.save(str(path))
+    return str(path)
+
+
+def _pdf(path, pages=2):
+    from PySide6.QtCore import QMarginsF, QSizeF
+    from PySide6.QtGui import QPageLayout, QPageSize, QPainter, QPdfWriter
+    w = QPdfWriter(str(path))
+    w.setPageSize(QPageSize(QSizeF(150, 220), QPageSize.Millimeter)); w.setPageMargins(QMarginsF(0, 0, 0, 0))
+    p = QPainter(w)
+    for i in range(pages):
+        if i:
+            w.newPage()
+        p.drawText(200, 400, f"PAGE {i + 1}")
+    p.end()
+    return str(path)
+
+
+def test_import_drawn_images_and_pdf_pages(window, app, tmp_path):
+    from comic_hub import pdf_art
+    from comic_hub.art_import import ImportArtDialog
+    files = [_art_png(tmp_path / "scan.png")]
+    if pdf_art.available():
+        files.append(_pdf(tmp_path / "book.pdf"))
+    dlg = ImportArtDialog(window.project, window, files)
+    dlg.dpi.setValue(150)
+    assert dlg.list.count() == 1 + (2 if pdf_art.available() else 0)
+    dlg.run()
+    assert [p.number for p in dlg.made] == list(range(5, 5 + dlg.list.count()))
+    first = window.project.load_page(5)
+    assert first.is_art and first.size.trim_w == pytest.approx(850 * 25.4 / 150, abs=0.01)
+    if pdf_art.available():
+        pdf_page = window.project.load_page(6)
+        assert pdf_page.size.trim_w == pytest.approx(150, abs=0.3)  # the PDF's real size
+    # Drawn pages skip the builder and open in Balloons, art underneath.
+    window.selected = 5
+    window.go("builder")
+    assert window.view == "balloons" and window.balloons_view.canvas.folder
+    window.add_balloon("speech")
+    assert window.save_letters()
+    assert window.project.load_page(5).art == first.art
+
+
 def test_unit_spin_box_never_changes_the_stored_value(app):
     box = UnitSpinBox(168.0, 20, 1000)
     for unit in ("in", "cm", "mm", "in"):

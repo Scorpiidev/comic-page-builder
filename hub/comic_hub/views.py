@@ -183,7 +183,7 @@ class PagesView(QWidget):
         if cached and cached[0] == e.modified:
             return cached[1]
         try:
-            ic = QIcon(page_thumbnail(self.project.load_page(number), 56))
+            ic = QIcon(page_thumbnail(self.project.load_page(number), 56, os.path.dirname(self.project.page_path(number))))
         except (ValueError, OSError):
             ic = icons.icon("alert", theme.DANGER, 48)
         self._thumbs[number] = (e.modified, ic)
@@ -272,11 +272,12 @@ class PagesView(QWidget):
             self.details.setVisible(False)
             return
         self.details.setVisible(True)
-        thumb = QLabel(); thumb.setPixmap(page_thumbnail(page, 34))
+        thumb = QLabel(); thumb.setPixmap(page_thumbnail(page, 34, os.path.dirname(self.project.page_path(page.number))))
         thumb.setStyleSheet(f"background: {theme.CANVAS}; padding: 3px 7px;")
         self.details_lay.addWidget(thumb)
         col = QVBoxLayout(); name = QLabel(f"<b>page_{e.number:02d}.svg</b>"); col.addWidget(name)
-        col.addWidget(_key(f"Comic page · {theme.STATUS_LABELS[e.status]}"))
+        kind = f"Drawn page · {page.art.href}" if page.is_art else "Comic page"
+        col.addWidget(_key(f"{kind} · {theme.STATUS_LABELS[e.status]}"))
         self.details_lay.addLayout(col)
         st = QVBoxLayout(); st.addWidget(_key("Status"))
         combo = QComboBox()
@@ -288,9 +289,13 @@ class PagesView(QWidget):
         s = page.size
         recipe = page.layout
         how = {"bsp": f"random, seed {recipe.get('seed')}", "preset": f"preset {recipe.get('name')}",
-               "grid": "grid"}.get(recipe.get("kind"), "custom")
-        for k, v in [("Panels", str(len(page.cells))), ("Layout", how),
-                     ("Size", f"{s.trim_w:g} × {s.trim_h:g} mm, {s.bleed:g} mm bleed"), ("Modified", _when(e.modified))]:
+               "grid": "grid", "art": f"drawn, {page.art.px_w} × {page.art.px_h} px" if page.art else "drawn"}.get(
+            recipe.get("kind"), "custom")
+        balloons = len(page.balloons or ())
+        for k, v in [("Panels" if not page.is_art else "Balloons", str(len(page.cells) if not page.is_art else balloons)),
+                     ("Layout", how),
+                     # Drawn pages get their size from pixels, so it's rarely a round number: one decimal is plenty.
+                     ("Size", f"{s.trim_w:.1f} × {s.trim_h:.1f} mm, {s.bleed:g} mm bleed".replace(".0 ", " ").replace(".0 mm", " mm")), ("Modified", _when(e.modified))]:
             c = QVBoxLayout(); c.addWidget(_key(k)); c.addWidget(QLabel(v)); self.details_lay.addLayout(c)
         self.details_lay.addStretch()
 

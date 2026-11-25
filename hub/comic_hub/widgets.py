@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import replace
 
 from PySide6.QtCore import QByteArray, QRectF, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QPainter, QPixmap
+from PySide6.QtGui import QColor, QImage, QImageReader, QPainter, QPixmap
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import QDoubleSpinBox, QFrame, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
@@ -92,20 +93,85 @@ def qt_friendly(svg: str) -> str:
     return _TEXT_WITH_SPANS.sub(split, svg)
 
 
-def page_svg(page: Page, guides: bool = True, qt: bool = True) -> str:
+def page_svg(page: Page, guides: bool = True, qt: bool = True, paper: bool = True) -> str:
     svg = page_to_svg(page)
     if not guides:
         svg = svg.replace('id="cpb-guides"', 'id="cpb-guides" display="none"', 1)
+    if not paper:
+        svg = svg.replace('id="cpb-paper"', 'id="cpb-paper" display="none"', 1)
     return qt_friendly(svg) if qt else svg
 
 
-def page_thumbnail(page: Page, width: int = 64) -> QPixmap:
-    """A small picture of the page's panels (no guides), for lists."""
+# Art images are big (a 600 dpi page is ~4000 × 6000 px), so they're loaded
+# once, shrunk to screen size, and kept until the file changes.
+_ART_CACHE: dict[str, tuple[float, QImage]] = {}
+ART_PREVIEW_PX = 2200
+
+
+def art_image(path: str) -> QImage | None:
+    try:
+        stamp = os.path.getmtime(path)
+    except OSError:
+        return None
+    hit = _ART_CACHE.get(path)
+    if hit and hit[0] == stamp:
+        return hit[1]
+    reader = QImageReader(path)
+    reader.setAutoTransform(True)
+    size = reader.size()
+    if size.isValid() and max(size.width(), size.height()) > ART_PREVIEW_PX:
+        reader.setScaledSize(size.scaled(ART_PREVIEW_PX, ART_PREVIEW_PX, Qt.KeepAspectRatio))
+    img = reader.read()
+    if img.isNull():
+        return None
+    _ART_CACHE[path] = (stamp, img)
+    return img
+
+
+def render_page(p: QPainter, page: Page, target: QRectF, folder: str | None = None, guides: bool = True,
+                renderer: QSvgRenderer | None = None) -> None:
+    """
+    Draw a page into ``target`` (screen pixels): paper, then a drawn page's
+    art, then panels, letters and guides from page.svg.
+
+    Qt can't follow page.svg's relative link to the art when the SVG comes
+    from memory, so the art is painted here and the SVG's own paper is
+    hidden (it would cover the art).
+    """
+    p.fillRect(target, QColor("#ffffff"))
+    if page.art is not None and folder:
+        img = art_image(os.path.join(folder, *page.art.href.split("/")))
+        k = target.width() / page.size.canvas_w
+        a = page.art.rect
+        dest = QRectF(target.x() + a.x * k, target.y() + a.y * k, a.w * k, a.h * k)
+        if img is not None:
+            p.drawImage(dest, img)
+        else:
+            p.fillRect(dest, QColor(theme.DANGER_SOFT))
+            p.setPen(QColor(theme.DANGER))
+            p.drawText(dest, Qt.AlignCenter | Qt.TextWordWrap, f"Art missing:\n{page.art.href}")
+    if renderer is None:
+        renderer = QSvgRenderer(QByteArray(page_svg(page, guides=guides, paper=False).encode("utf-8")))
+    renderer.render(p, target)
+
+
+def page_thumbnail(page: Page, width: int = 64, folder: str | None = None) -> QPixmap:
+    """A small picture of the page (no guides), for lists. ``folder`` is where a drawn page's art lives."""
     # A 0.6 mm line is under a pixel at thumbnail size, so thumbnails draw it thicker.
     thick = max(page.style.stroke_width, page.size.canvas_w * 1.4 / width)
     page = replace(page, style=replace(page.style, stroke_width=thick))
     h = round(width * page.size.canvas_h / page.size.canvas_w)
-    return icons.svg_pixmap(page_svg(page, guides=False), width, h)
+    if page.art is None:
+        return icons.svg_pixmap(page_svg(page, guides=False), width, h)
+    ratio = 2.0  # drawn at 2x, so thumbnails stay sharp on high-DPI screens
+    pm = QPixmap(round(width * ratio), round(h * ratio))
+    pm.fill(QColor("#ffffff"))
+    painter = QPainter(pm)
+    painter.setRenderHint(QPainter.SmoothPixmapTransform)
+    render_page(painter, page, QRectF(0, 0, pm.width(), pm.height()), folder, guides=False)
+    painter.end()
+    pm.setDevicePixelRatio(ratio)
+    return pm
 
 
 class PagePreview(QWidget):

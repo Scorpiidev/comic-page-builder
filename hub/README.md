@@ -72,6 +72,18 @@ PYTHONPATH=core:hub python -m comic_hub              # macOS / Linux
 - **Save letters** rewrites only the page's Letters layer: panels you
   reshaped in Illustrator and your own additions stay as they are.
 
+## Drawn pages (M5)
+
+- **Pages → Import drawn pages…** takes PNG, JPEG, WebP and PDF files. Each
+  image, and each page of a PDF, becomes one page at its real size (the
+  image's own resolution, or the one you set in the dialog).
+- Tick **The art includes the bleed** if you painted past the trim; otherwise
+  the art is the trim and the bleed around it stays white.
+- The art is copied into the page's folder as `page_NN_art.png` and linked
+  under the panels and letters, so page.svg stays small.
+- Drawn pages open straight in **Balloons** (there are no panels to build).
+- PDFs need pypdfium2, which `start_comic_hub.bat` installs with PySide6.
+
 On Windows 11 the title bar is tinted pink natively (`winframe.py`), so snap
 layouts and the rest of the window behaviour stay normal.
 
@@ -82,6 +94,7 @@ comic_hub/
     __main__.py     starts the app
     main_window.py  address bar, command bar, navigation, screens, status bar
     balloons_view.py  the Balloons screen: canvas with body/tail handles, inspector
+    art_import.py   Import drawn pages dialog; pdf_art.py renders PDF pages (pypdfium2)
     views.py        All projects, Pages, Page builder, placeholders
     lettering_view.py  Lettering: font list, preview, size advisor, calibration dialog
     calibration_pdf.py draws the calibration sheet to a real-size PDF

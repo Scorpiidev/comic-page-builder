@@ -20,10 +20,12 @@ from __future__ import annotations
 import json
 import os
 import random
+import shutil
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 from typing import Callable, Optional
 
+from .art import Art, art_size, image_info
 from .balloons import BalloonFont
 from .build import page_from_bsp, plan_batch
 from .geometry import PageSize
@@ -122,6 +124,38 @@ class Project:
             self.set_status(page.number, status, save=False)
         self.save()
         return e
+
+    def add_art_page(self, image_path: str, *, dpi: Optional[float] = None, includes_bleed: bool = False,
+                     status: str = "letters", keep_source: bool = True) -> Page:
+        """
+        Add a drawn page from an image (D7). The image is copied beside the
+        page's SVG as page_NN_art.<ext>, so the project folder holds
+        everything it needs even if the original moves.
+
+        ``keep_source=False`` moves the file instead (the hub uses that for
+        the temporary images it renders from PDFs).
+        """
+        info = image_info(image_path)
+        number = self.next_number()
+        size, rect = art_size(info, dpi=dpi, fallback_dpi=self.size.dpi, bleed=self.size.bleed,
+                              includes_bleed=includes_bleed, safe=self.size.safe, margin=self.size.margin)
+        ext = os.path.splitext(image_path)[1].lower()
+        name = f"page_{number:02d}_art{'.jpg' if ext == '.jpeg' else ext}"
+        folder = os.path.dirname(self.page_path(number))
+        os.makedirs(folder, exist_ok=True)
+        target = os.path.join(folder, name)
+        (shutil.copyfile if keep_source else shutil.move)(image_path, target)
+        page = Page(number=number, size=size, cells=(), gutter=self.gutter, reading=self.reading,
+                    style=self.style, layout={"kind": "art"},
+                    art=Art(href=name, rect=rect, px_w=info.width, px_h=info.height))
+        self.save_page(page, status)
+        return page
+
+    def art_path(self, page: Page) -> Optional[str]:
+        """The full path of a drawn page's image, or None for a generated page."""
+        if page.art is None:
+            return None
+        return os.path.join(os.path.dirname(self.page_path(page.number)), *page.art.href.split("/"))
 
     def save_balloons(self, number: int, balloons) -> PageEntry:
         """Write only a page's Letters layer (see PageDocument.letters_svg) and note it in the manifest."""

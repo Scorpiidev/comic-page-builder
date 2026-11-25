@@ -113,7 +113,23 @@ Photoshop, Illustrator and Krita. The plan and every decision live in
     Letters layer. Checked on Windows with a real window screenshot.
   - Assumption to confirm with Ivón: page mm are print mm, so a balloon's
     font size is the preset's print size (work_scale isn't applied).
-  - Next: image/PDF page import (D7), letters in the PS and AI importers,
+  - **Drawn pages (D7) done 2026-11-25:** `core/cpb_core/art.py` reads
+    PNG/JPEG/WebP headers (size + dpi) with the stdlib; `Project.add_art_page`
+    copies the image beside page.svg as `page_NN_art.<ext>` and links it from
+    a `cpb-art` layer (`xlink:href`, under the panels). PDFs are rendered to
+    PNG by the hub with **pypdfium2** (Ivón approved it; Apache/BSD, in
+    `hub/requirements.txt`, imported lazily in `hub/comic_hub/pdf_art.py`).
+    Drawn pages skip the builder and open in Balloons. The hub paints the art
+    itself (`widgets.render_page`), since Qt can't follow page.svg's relative
+    link when the SVG comes from memory.
+    The PS and AI importers don't handle the art layer yet.
+  - Balloon text on the canvas is drawn as outlines (`QPainterPath.addText`):
+    `drawText` under a scaled painter got ClearType colour fringes on Windows.
+  - Idea discussed with Ivón, not decided yet: a layout editor milestone
+    (knife cuts at any angle on the BSP split tree + inset/overlapping
+    panels), replacing the 0.13 click-the-gutter grid. Panels would become
+    polygons; the PS importer would need polygon frames.
+  - Next: letters (and art) in the PS and AI importers,
     then test in the real apps (open question 2 in DESIGN.md §15). Nice to
     have: zoom on the balloon canvas, undo.
 
@@ -156,7 +172,7 @@ what changed in `M2_RESULTS.md`.
   with `cpb-`. Never delete anything else.
 - **Importers never compute geometry.** Each panel carries its final rect
   in `cpb:rect`.
-- Run `python -m pytest` before every commit (162 tests at last count; the hub tests need PySide6).
+- Run `python -m pytest` before every commit (167 tests at last count; the hub tests need PySide6).
   Golden files regenerate only on purpose: `CPB_UPDATE_GOLDEN=1`.
 - Don't touch `comicpagebuilder/` (the 0.13 plugin) until M6.
 - Commit messages explain the why. Ivón is learning Python, so code comments

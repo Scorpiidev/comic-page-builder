@@ -18,6 +18,7 @@ Keyboard: Tab switches body / tail, arrows nudge (Shift: 5 mm), Delete removes.
 from __future__ import annotations
 
 import math
+import os
 import re
 from dataclasses import replace
 
@@ -37,7 +38,7 @@ from cpb_core.project import Project
 from cpb_core.svg.letters import next_number
 
 from . import theme
-from .widgets import page_svg
+from .widgets import page_svg, render_page
 
 KIND_LABELS = {"speech": "Speech", "thought": "Thought", "shout": "Shout", "whisper": "Whisper", "caption": "Caption"}
 ROLE_LABELS = {"dialogue": "Dialogue", "caption": "Caption", "whisper": "Whisper", "sfx": "SFX"}
@@ -123,6 +124,7 @@ class BalloonCanvas(QWidget):
         self.setMinimumSize(320, 360)
         self.setMouseTracking(True)
         self.page: Page | None = None
+        self.folder: str | None = None
         self.balloons: list[Balloon] = []
         self.selected: int | None = None
         self.part = "body"   # what the keyboard moves: "body" or "tail"
@@ -130,10 +132,10 @@ class BalloonCanvas(QWidget):
         self._drag: tuple | None = None
 
     # ---------- data ----------
-    def set_page(self, page: Page | None) -> None:
-        self.page = page
-        # Panels, paper and guides come from page.svg; balloons are drawn here instead.
-        self._renderer = QSvgRenderer(QByteArray(page_svg(replace(page, balloons=()), qt=True).encode())) if page else None
+    def set_page(self, page: Page | None, folder: str | None = None) -> None:
+        self.page, self.folder = page, folder
+        # Panels and guides come from page.svg; balloons are drawn here instead (with handles).
+        self._renderer = QSvgRenderer(QByteArray(page_svg(replace(page, balloons=()), paper=False).encode())) if page else None
         self.update()
 
     def set_balloons(self, balloons: list[Balloon], selected: int | None) -> None:
@@ -170,7 +172,8 @@ class BalloonCanvas(QWidget):
         x0, y0, k = self._frame()
         s = self.page.size
         p.fillRect(QRectF(x0 + 3, y0 + 5, s.canvas_w * k, s.canvas_h * k), QColor(0, 0, 0, 50))
-        self._renderer.render(p, QRectF(x0, y0, s.canvas_w * k, s.canvas_h * k))
+        p.setRenderHint(QPainter.SmoothPixmapTransform)
+        render_page(p, self.page, QRectF(x0, y0, s.canvas_w * k, s.canvas_h * k), self.folder, renderer=self._renderer)
         p.save()
         p.translate(x0, y0)
         p.scale(k, k)
@@ -303,13 +306,17 @@ def draw_balloon(p: QPainter, b: Balloon) -> None:
     block = layout_lines(b.lines, b, measure)
     f = qfont(b.font)
     k = b.font.size_pt * 25.4 / 72 / _REF_PX
-    p.setFont(f)
-    p.setPen(QColor(b.font.color))
+    # Text goes in as outlines, not drawText: Windows' ClearType gives scaled
+    # text coloured fringes, and outlines stay crisp at any zoom.
+    p.setPen(Qt.NoPen)
+    p.setBrush(QColor(b.font.color))
     for line, y in zip(block.lines, block.baselines(b.cy)):
+        glyphs = QPainterPath()
+        glyphs.addText(QPointF(-measure(line) / k / 2, 0), f, line)
         p.save()
         p.translate(b.cx, y)
         p.scale(k, k)
-        p.drawText(QPointF(-measure(line) / k / 2, 0), line)
+        p.drawPath(glyphs)
         p.restore()
 
 
@@ -407,7 +414,7 @@ class BalloonsView(QWidget):
         self.saved = tuple(doc.page.balloons or ())
         self.balloons = list(self.saved)
         self.edited_elsewhere = doc.edited_balloons
-        self.canvas.set_page(doc.page)
+        self.canvas.set_page(doc.page, os.path.dirname(project.page_path(number)))
         self.canvas.set_balloons(self.balloons, self.balloons[0].number if self.balloons else None)
         self._show_selected()
         self.dirty_changed.emit(False)

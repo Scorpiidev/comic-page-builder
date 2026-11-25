@@ -1,3 +1,6 @@
-# The hub's only dependency. Essentials is the smaller PySide6 package
-# (Widgets, Svg), which is all the hub uses. LGPL, free.
+# Essentials is the smaller PySide6 package (Widgets, Svg), which is all the
+# hub uses. LGPL, free.
 PySide6-Essentials>=6.8
+# Reads PDFs for "Import drawn pages" (Chrome's PDF engine). Apache-2.0 /
+# BSD-3-Clause, a few MB. The hub starts without it; only PDF import needs it.
+pypdfium2>=4.30

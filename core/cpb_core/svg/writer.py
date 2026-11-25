@@ -8,6 +8,7 @@ Layer stack, bottom to top (SVG paints later elements on top)::
 
     <defs>        cpb-clip-N   one clip path per panel, for the importers
     cpb-paper     white canvas, so the file previews correctly anywhere
+    cpb-art       drawn pages only: the linked image (art.py)
     cpb-panels    one <path> per panel, in reading order
     cpb-letters   balloons and text (svg/letters.py); only touched when the page has balloons
     cpb-guides    trim, safe area and crop marks; cpb:print="false"
@@ -21,10 +22,11 @@ from typing import Optional
 
 from ..geometry import Rect
 from ..model import Page
-from .ns import CPB, FORMAT, FORMAT_VERSION, INKSCAPE, SVG, frac, is_owned, num, q
+from .ns import CPB, FORMAT, FORMAT_VERSION, INKSCAPE, SVG, XLINK, frac, is_owned, num, q
 
 LAYERS = [  # (id, label), bottom to top
     ("cpb-paper", "Paper"),
+    ("cpb-art", "Art"),
     ("cpb-panels", "Panels"),
     ("cpb-letters", "Letters"),
     ("cpb-guides", "Guides"),
@@ -136,6 +138,15 @@ def apply_page(root: ET.Element, page: Page) -> None:
     _clear_owned(paper)
     _child(paper, "rect", {"id": "cpb-paper-fill", "x": "0", "y": "0", "width": num(s.canvas_w),
                            "height": num(s.canvas_h), "fill": "#ffffff"}, index=0)
+
+    if page.art is not None:
+        a = page.art
+        art = _layer(root, "cpb-art", "Art")
+        _clear_owned(art)
+        # xlink:href, not SVG 2's plain href: Illustrator and Qt only follow the xlink one.
+        _child(art, "image", {"id": "cpb-art-image", q(XLINK, "href"): a.href,
+                              "x": num(a.rect.x), "y": num(a.rect.y), "width": num(a.rect.w), "height": num(a.rect.h),
+                              "preserveAspectRatio": "none", q(CPB, "px"): f"{a.px_w} {a.px_h}"}, index=0)
 
     pg = _layer(root, "cpb-panels", "Panels")
     pg.set(q(CPB, "gutter"), num(page.gutter))

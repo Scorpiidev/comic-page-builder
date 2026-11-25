@@ -480,8 +480,11 @@ never by the working canvas.
   - Keyboard: Tab switches body/tail, arrows nudge, Delete removes.
   - The SVG still gets one combined outline per balloon (below); the
     parameters are stored on the group so it can be edited again.
-- **Imported art (D7).** Balloons can be placed on imported images and PDF
-  pages. The art stays a linked file underneath; balloons are an SVG layer
+- **Imported art (D7, built 2026-11-25).** Balloons can be placed on imported images and PDF
+  pages. `core/cpb_core/art.py` sizes the page from the image (pixels and
+  resolution); the image is copied beside page.svg as `page_NN_art.<ext>` and
+  linked from a `cpb-art` layer between Paper and Panels. PDF pages are
+  rendered to PNG by the hub with pypdfium2 (Apache/BSD). The art stays a linked file underneath; balloons are an SVG layer
   on top. Later: detect panels in the art so balloons can snap inside them.
 - **Size check on every balloon:** the inspector shows the printed cap
   height and warns below 1.5 mm (§9).

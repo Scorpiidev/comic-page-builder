@@ -57,6 +57,8 @@ class Page:
     # page's balloons as they are", so the page builder, which knows nothing
     # about balloons, can save a page without wiping its lettering.
     balloons: Optional[tuple] = None
+    # Drawn pages (D7): the linked image under the letters (art.Art), else None.
+    art: Optional[object] = None
 
     def __post_init__(self) -> None:
         if self.number < 1:
@@ -75,6 +77,11 @@ class Page:
             numbers = [b.number for b in self.balloons]
             if len(set(numbers)) != len(numbers):
                 raise ValueError("two balloons on the page share a number")
+
+    @property
+    def is_art(self) -> bool:
+        """A drawn page: its art came in as an image, so it has no generated panels."""
+        return self.art is not None
 
     @property
     def file_name(self) -> str:

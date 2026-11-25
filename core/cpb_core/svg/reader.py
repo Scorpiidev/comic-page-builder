@@ -17,10 +17,11 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field, replace
 from typing import Optional, Union
 
-from ..geometry import PageSize
+from ..art import Art
+from ..geometry import PageSize, Rect
 from ..layouts.cells import Cell
 from ..model import Page, PanelStyle
-from .ns import BORDERS_FORMAT, CPB, FORMAT, FORMAT_VERSION, KNOWN_PREFIXES, SVG, is_owned, q
+from .ns import BORDERS_FORMAT, CPB, FORMAT, FORMAT_VERSION, KNOWN_PREFIXES, SVG, XLINK, is_owned, q
 from .letters import read_balloons
 from .writer import LAYERS, apply_page, panel_path, serialize
 
@@ -180,11 +181,21 @@ def parse_page(text: Union[str, bytes]) -> PageDocument:
         raise ValueError("the Panels layer has a damaged cpb:layout value") from None
 
     balloons, edited = read_balloons(_find(root, "cpb-letters"))
+    art = None
+    image = _find(root, "cpb-art-image")
+    if image is not None:
+        try:
+            px_w, px_h = (int(v) for v in image.get(q(CPB, "px"), "0 0").split())
+            art = Art(href=image.get(q(XLINK, "href")) or image.get("href", ""),
+                      rect=Rect(float(image.get("x", 0)), float(image.get("y", 0)),
+                                float(image.get("width")), float(image.get("height"))), px_w=px_w, px_h=px_h)
+        except (TypeError, ValueError):
+            raise ValueError("the Art layer's image has a damaged size") from None
     page = Page(number=number, size=size, cells=tuple(cells), gutter=_float(group, "gutter", 3.0),
                 reading=group.get(q(CPB, "reading"), "ltr"), style=style, layout=layout,
                 # No balloons reads as None ("nothing to change"), so a page
                 # read back equals the page that was written.
-                balloons=balloons or None)
+                balloons=balloons or None, art=art)
 
     # A panel counts as edited elsewhere when its path no longer matches what the hub would draw.
     expected = {p.index: panel_path(page, p.rect) for p in page.panels()}

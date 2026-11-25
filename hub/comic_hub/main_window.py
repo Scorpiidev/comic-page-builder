@@ -14,6 +14,7 @@ from cpb_core.project import Project, create_project, load_project, update_setti
 
 from . import icons, theme
 from .dialogs import AddPageDialog, BatchDialog, LayoutOptionsDialog, ProjectDialog
+from .art_import import ImportArtDialog
 from .balloons_view import KIND_LABELS, BalloonsView
 from .lettering_view import CalibrationDialog, FontLibrary, LetteringView
 from .views import BuilderView, PagesView, PlaceholderView, ProjectsView
@@ -197,6 +198,10 @@ class MainWindow(QMainWindow):
         if view in ("builder", "balloons") and self.selected is None:
             self.toast("No page selected", "Pick a page in Pages first, or add one.")
             view = "pages"
+        if view == "builder" and self._selected_is_art():
+            # Drawn pages have no generated panels to build: lettering is what they're for.
+            self.toast("Drawn page", f"page_{self.selected:02d} is imported art, so it opens in Balloons.")
+            view = "balloons"
         if self.view != view and not self._leave_editor():
             self._sync_nav()
             return
@@ -290,6 +295,12 @@ class MainWindow(QMainWindow):
             return self.save_page()
         return True
 
+    def _selected_is_art(self) -> bool:
+        try:
+            return self.project.load_page(self.selected).is_art
+        except (ValueError, OSError):
+            return False
+
     def _select(self, number: int) -> None:
         self.selected = number
         self._update_title()
@@ -327,8 +338,10 @@ class MainWindow(QMainWindow):
         cmds = {
             "projects": [("plus", "New project…", self.new_project, True), ("open", "Open…", self.open_dialog, False),
                          ("gear", "Project settings…", self.project_settings, False)],
-            "pages": [("plus", "Add page…", self.add_page, True), ("stack", "Batch generate…", self.batch, True), None,
-                      ("builder", "Open in builder", lambda: self.go("builder"), False)],
+            "pages": [("plus", "Add page…", self.add_page, True), ("stack", "Batch generate…", self.batch, True),
+                      ("open", "Import drawn pages…", self.import_art, False), None,
+                      ("builder", "Open in builder", lambda: self.go("builder"), False),
+                      ("balloon", "Balloons", lambda: self.go("balloons"), False)],
             "builder": [("sliders", "Layout options…", self.layout_options, False), ("dice", "Roll layout", self.roll, False),
                         ("check", "Save page", self.save_page, True)],
             "balloons": [("balloon", "Add balloon", None, True), ("trash", "Delete balloon", self.delete_balloon, False),
@@ -472,6 +485,17 @@ class MainWindow(QMainWindow):
         self.toast("Page added", f"page_{page.number:02d} added to {theme.STATUS_LABELS[dlg.status.currentData()]}.")
         self.go("builder" if dlg.open_builder.isChecked() else "pages", record=self.view != "pages")
         if self.view == "pages":
+            self.pages_view.set_project(self.project, self.selected)
+
+    def import_art(self, files: list[str] | None = None) -> None:
+        if not self.project:
+            return
+        dlg = ImportArtDialog(self.project, self, files if isinstance(files, list) else None)
+        if dlg.exec() and dlg.made:
+            self.selected = dlg.made[0].number
+            n = len(dlg.made)
+            self.toast("Drawn pages imported", f"{n} page{'s' if n != 1 else ''} added, ready for balloons.")
+            self.go("pages", record=False)
             self.pages_view.set_project(self.project, self.selected)
 
     def batch(self) -> None:
