@@ -394,8 +394,9 @@ class MainWindow(QMainWindow):
             d = self.builder.draft
             star = " *" if self.builder.dirty else ""
             crumbs += [name, self.project.chapter, f"page_{d.number:02d}.svg"]
+            kind = d.layout.get("kind", "custom")
             status = f"{len(d.cells)} panels · gutter {d.gutter:g} mm · " + (
-                f"seed {d.layout.get('seed')}" if d.layout.get("kind") == "bsp" else d.layout.get("kind", "custom")) + \
+                f"seed {d.layout.get('seed')}" if kind == "bsp" else "hand-cut" if kind == "manual" else kind) + \
                 (" · unsaved changes" if star else "")
             title = f"Page builder · page_{d.number:02d}{star} · {name}"
         elif self.view == "balloons" and self.balloons_view.page:

@@ -22,7 +22,7 @@ from typing import Union
 
 from ..model import Page
 from .ns import BORDERS_FORMAT, CPB, SVG, num, q
-from .writer import panel_path, serialize
+from .writer import panel_d, serialize
 
 
 def borders_svg(page: Page) -> str:
@@ -42,7 +42,7 @@ def borders_svg(page: Page) -> str:
     for p in page.panels():
         ET.SubElement(root, q(SVG, "path"), {
             "id": f"cpb-border-{p.index}",
-            "d": panel_path(page, p.rect),
+            "d": panel_d(page, p),
             # Panel fills belong to the PSD's Mask layers; CSP would turn a fill into a line.
             "fill": "none",
             "stroke": st.stroke,

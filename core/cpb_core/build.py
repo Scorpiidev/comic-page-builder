@@ -28,6 +28,13 @@ def page_from_bsp(number: int, size: PageSize, panels: int, *, mode: str = "auto
     return Page(number, size, tuple(cells), gutter, reading, style or PanelStyle(), recipe)
 
 
+def page_manual(number: int, size: PageSize, layout: Optional[dict] = None, *, gutter: float = 3.0,
+                reading: str = "ltr", style: Optional[PanelStyle] = None) -> Page:
+    """A hand-made layout (layouts/knife.py); without ``layout``, one blank panel to cut up."""
+    from .layouts.knife import empty
+    return Page(number, size, (), gutter, reading, style or PanelStyle(), layout or empty())
+
+
 def page_from_preset(number: int, size: PageSize, preset: Preset, *, gutter: float = 3.0,
                      reading: str = "ltr", style: Optional[PanelStyle] = None) -> Page:
     recipe = {"kind": "preset", "name": preset.name}

@@ -38,8 +38,12 @@ class PanelStyle:
 @dataclass(frozen=True)
 class Panel:
     index: int  # 1-based, in reading order
-    cell: Cell  # gutter-free slot in the live area
-    rect: Rect  # final rectangle in canvas mm, gutter applied
+    cell: Cell  # gutter-free slot in the live area (for a polygon: its bounding box)
+    rect: Rect  # final rectangle in canvas mm, gutter applied (for a polygon: its bounding box)
+    # Manual layouts (layouts/knife.py): the real outline in canvas mm, for
+    # panels cut at an angle. None means the panel is just ``rect``.
+    points: Optional[tuple] = None
+    on_top: bool = False  # an inset panel, drawn over the others
 
 
 @dataclass
@@ -70,6 +74,11 @@ class Page:
         # Keep cells in reading order and at the precision page.svg stores
         # (6 decimals), so a page saved and read back compares equal.
         q = lambda v: round(v, CELL_DECIMALS)
+        if self.layout.get("kind") == "manual":
+            # Manual layouts are their cut tree; the cells are only bounding
+            # boxes for page.svg's cpb:cell, so they're always derived from it.
+            from .layouts.knife import shapes
+            self.cells = tuple(s.bbox for s in shapes(self.layout))
         self.cells = tuple(reading_order((Cell(q(c.x), q(c.y), q(c.w), q(c.h)) for c in self.cells),
                                          self.reading))
         if self.balloons is not None:
@@ -91,5 +100,13 @@ class Page:
         return PageGeometry.of(self.size)
 
     def panels(self) -> list[Panel]:
+        if self.layout.get("kind") == "manual":
+            from .layouts.knife import to_mm
+            out = []
+            for i, mp in enumerate(to_mm(self.layout, self.geometry().live, self.gutter, self.reading), start=1):
+                xs, ys = [p[0] for p in mp.points], [p[1] for p in mp.points]
+                rect = Rect(min(xs), min(ys), max(xs) - min(xs), max(ys) - min(ys))
+                out.append(Panel(i, mp.cell, rect, mp.points, mp.on_top))
+            return out
         rects = apply_gutter(self.cells, self.geometry().live, self.gutter)
         return [Panel(i, c, r) for i, (c, r) in enumerate(zip(self.cells, rects), start=1)]

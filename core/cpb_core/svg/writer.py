@@ -52,6 +52,13 @@ def panel_path(page: Page, rect: Rect) -> str:
     return rect_path(rect, page.style.corner_radius)
 
 
+def panel_d(page: Page, panel) -> str:
+    """A panel's outline: its polygon when it has one (manual layouts), else its rectangle."""
+    if panel.points:
+        return "M" + "L".join(f"{num(x)} {num(y)}" for x, y in panel.points) + "Z"
+    return panel_path(page, panel.rect)
+
+
 def _child(parent: ET.Element, tag: str, attrs: dict, index: Optional[int] = None) -> ET.Element:
     el = ET.Element(q(SVG, tag), {k: v for k, v in attrs.items() if v is not None})
     if index is None:
@@ -132,7 +139,7 @@ def apply_page(root: ET.Element, page: Page) -> None:
         defs.remove(el)
     for p in panels:
         clip = _child(defs, "clipPath", {"id": f"cpb-clip-{p.index}"})
-        _child(clip, "path", {"d": panel_path(page, p.rect)})
+        _child(clip, "path", {"d": panel_d(page, p)})
 
     paper = _layer(root, "cpb-paper", "Paper")
     _clear_owned(paper)
@@ -154,20 +161,35 @@ def apply_page(root: ET.Element, page: Page) -> None:
     pg.set(q(CPB, "radius"), num(st.corner_radius))
     pg.set(q(CPB, "layout"), json.dumps(page.layout, sort_keys=True, separators=(",", ":")))
     _clear_owned(pg)
-    for i, p in enumerate(panels):
+    # Inset panels go last, so they're painted over the panels they overlap.
+    pos = 0
+    for p in sorted(panels, key=lambda p: p.on_top):
         c = p.cell
-        _child(pg, "path", {
+        if p.on_top:
+            # A paper-coloured halo one gutter wide, so the inset reads as in front.
+            _child(pg, "path", {"id": f"cpb-halo-{p.index}", "d": panel_d(page, p), "fill": "#ffffff",
+                                "stroke": "#ffffff", "stroke-width": num(2 * page.gutter),
+                                "stroke-linejoin": "miter"}, index=pos)
+            pos += 1
+        attrs = {
             "id": f"cpb-panel-{p.index}",
             q(CPB, "index"): str(p.index),
             q(CPB, "cell"): " ".join(frac(v) for v in (c.x, c.y, c.w, c.h)),
             # Final rectangle in canvas mm, so importers never redo geometry.
+            # For a polygon it's the bounding box; cpb:points has the outline.
             q(CPB, "rect"): " ".join(num(v) for v in (p.rect.x, p.rect.y, p.rect.w, p.rect.h)),
-            "d": panel_path(page, p.rect),
+            "d": panel_d(page, p),
             "fill": st.fill or "none",
             "stroke": st.stroke,
             "stroke-width": num(st.stroke_width),
             "stroke-linejoin": "miter",
-        }, index=i)
+        }
+        if p.points:
+            attrs[q(CPB, "points")] = " ".join(f"{num(x)},{num(y)}" for x, y in p.points)
+        if p.on_top:
+            attrs[q(CPB, "inset")] = "true"
+        _child(pg, "path", attrs, index=pos)
+        pos += 1
 
     letters = _layer(root, "cpb-letters", "Letters")
     if page.balloons is not None:

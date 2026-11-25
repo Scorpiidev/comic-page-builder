@@ -166,6 +166,63 @@ def test_import_drawn_images_and_pdf_pages(window, app, tmp_path):
     assert window.project.load_page(5).art == first.art
 
 
+# ---------- hand-cut layouts (prototype) ----------
+def _drag(canvas, a_mm, b_mm, mods=None):
+    from PySide6.QtCore import QEvent, QPointF, Qt
+    from PySide6.QtGui import QMouseEvent
+    mods = mods or Qt.NoModifier
+    a, b = canvas.to_px(*a_mm), canvas.to_px(*b_mm)
+    canvas.mousePressEvent(QMouseEvent(QEvent.MouseButtonPress, a, a, Qt.LeftButton, Qt.LeftButton, mods))
+    canvas.mouseMoveEvent(QMouseEvent(QEvent.MouseMove, b, b, Qt.LeftButton, Qt.LeftButton, mods))
+    canvas.mouseReleaseEvent(QMouseEvent(QEvent.MouseButtonRelease, b, b, Qt.LeftButton, Qt.NoButton, mods))
+
+
+def test_cut_merge_and_inset_by_hand(window, app):
+    window.selected = 1
+    window.go("builder")
+    b = window.builder
+    assert b.draft.layout["kind"] == "manual" and len(b.draft.panels()) == 1  # the wizard's blank pages are blank
+    c = b.preview
+    live = b.draft.geometry().live
+    mid_y = live.y + live.h / 2
+    # A nearly level drag snaps to straight across.
+    _drag(c, (live.x + 10, mid_y), (live.right - 10, mid_y + 2))
+    top, bottom = b.draft.panels()
+    assert top.points[2][1] == pytest.approx(top.points[3][1])
+    # A slanted cut in the bottom panel, with snapping off.
+    from PySide6.QtCore import Qt
+    _drag(c, (live.x + 60, mid_y + 10), (live.x + 80, live.bottom - 10), Qt.AltModifier)
+    assert len(b.draft.panels()) == 3 and b.dirty
+    b.set_tool("inset")
+    _drag(c, (live.x + 20, live.y + 20), (live.x + 70, live.y + 60))
+    assert sum(p.on_top for p in b.draft.panels()) == 1
+    b.undo()
+    assert len(b.draft.panels()) == 3
+    b.redo()
+    b.set_tool("merge")
+    from PySide6.QtCore import QEvent, QPointF
+    from PySide6.QtGui import QMouseEvent
+    pos = c.to_px(live.x + live.w * 0.9, mid_y)  # on the first cut's gutter
+    c.mousePressEvent(QMouseEvent(QEvent.MouseButtonPress, pos, pos, Qt.LeftButton, Qt.LeftButton, Qt.NoModifier))
+    assert len(b.draft.panels()) == 2  # the cut inside the bottom half went with it; the inset stays
+    assert window.save_page()
+    assert len(read_page(window.project.page_path(1)).page.panels()) == 2
+
+
+def test_presets_can_be_cut_further(window, app):
+    window.selected = 2
+    window.go("builder")
+    b = window.builder
+    dlg = LayoutOptionsDialog(b.draft, window)
+    assert dlg.tabs.tabText(0) == "Presets"
+    dlg.changed.connect(b.set_draft)
+    dlg._preset_clicked(dlg.presets.item(0))
+    n = len(b.draft.panels())
+    p = b.draft.panels()[0].rect
+    _drag(b.preview, (p.x + 5, p.y + p.h / 2), (p.right - 5, p.y + p.h / 2 + 8))
+    assert b.draft.layout["kind"] == "manual" and len(b.draft.panels()) == n + 1
+
+
 def test_unit_spin_box_never_changes_the_stored_value(app):
     box = UnitSpinBox(168.0, 20, 1000)
     for unit in ("in", "cm", "mm", "in"):

@@ -27,7 +27,7 @@ from typing import Callable, Optional
 
 from .art import Art, art_size, image_info
 from .balloons import BalloonFont
-from .build import page_from_bsp, plan_batch
+from .build import page_from_bsp, page_manual, plan_batch
 from .geometry import PageSize
 from .lettering import ROLES, LetteringPreset
 from .model import Page, PanelStyle
@@ -185,9 +185,15 @@ class Project:
 
     def new_page(self, panels: int = 5, *, mode: str = "auto", seed: Optional[int] = None,
                  status: str = "thumbs") -> Page:
-        """Add a page with a random layout, using the project's defaults."""
-        page = page_from_bsp(self.next_number(), self.size, panels, mode=mode, seed=seed,
-                             gutter=self.gutter, reading=self.reading, style=self.style)
+        """
+        Add a page using the project's defaults: ``mode="blank"`` is one panel
+        to cut by hand; the other modes are random layouts with that cut mode.
+        """
+        if mode == "blank":
+            page = page_manual(self.next_number(), self.size, gutter=self.gutter, reading=self.reading, style=self.style)
+        else:
+            page = page_from_bsp(self.next_number(), self.size, panels, mode=mode, seed=seed,
+                                 gutter=self.gutter, reading=self.reading, style=self.style)
         self.save_page(page, status)
         return page
 
@@ -282,7 +288,8 @@ def create_project(folder: str, name: str, *, chapter: str = "Chapter 1", readin
     if blank_pages:
         rng = random.Random(seed)
         for _ in range(blank_pages):
-            project.new_page(rng.randint(3, 6), seed=rng.randrange(10_000, 100_000))
+            # Blank means blank: one panel to cut by hand, not a random layout.
+            project.new_page(rng.randint(3, 6), mode="blank", seed=rng.randrange(10_000, 100_000))
     return project
 
 

@@ -132,6 +132,16 @@ Photoshop, Illustrator and Krita. The plan and every decision live in
     0.13 click-the-gutter grid. Panels would become polygons; the PS
     importer would need polygon frames. Until then the hub still defaults to
     random layouts (Layout options' first tab, Add page, wizard pages).
+  - **Layout builder prototype, branch `layout-builder-prototype`
+    (2026-11-25), not merged:** `core/cpb_core/layouts/knife.py` (split tree
+    with cuts at any angle, convex polygons, per-edge gutters, insets with a
+    paper halo, presets/random layouts convert to a cut tree) and the Page
+    builder's Knife / Inset panel / Merge tools with undo
+    (`hub/comic_hub/layout_canvas.py`). Blank pages and Add page now
+    default to a blank hand-cut page; Layout options opens on Presets.
+    **Known gap:** the Photoshop importer still builds rectangle frames
+    from `cpb:rect`, so slanted panels come in as their bounding boxes;
+    it needs to use `cpb:points`. Illustrator reads the paths, so it should be fine.
   - Next: letters (and art) in the PS and AI importers,
     then test in the real apps (open question 2 in DESIGN.md §15). Nice to
     have: zoom on the balloon canvas, undo.

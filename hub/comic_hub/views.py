@@ -6,20 +6,21 @@ import os
 from dataclasses import replace
 
 from PySide6.QtCore import QSize, Qt, Signal
-from PySide6.QtGui import QColor, QIcon
+from PySide6.QtGui import QColor, QIcon, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView, QButtonGroup, QComboBox, QFormLayout, QFrame, QGroupBox, QHBoxLayout, QHeaderView,
     QLabel, QListView, QListWidget, QListWidgetItem, QPushButton, QRadioButton, QScrollArea, QSpinBox,
     QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
-from cpb_core.build import rebuild
+from cpb_core.build import page_manual, rebuild
 from cpb_core.geometry import PageSize
 from cpb_core.model import Page, PanelStyle
 from cpb_core.paper import PAPER_SIZES
 from cpb_core.project import STATUSES, Project, load_project
 
 from . import icons, theme
+from .layout_canvas import LayoutCanvas
 from .widgets import GroupHeader, PagePreview, UnitSpinBox, page_thumbnail
 
 ADD_TILE = -1  # item data for the "+ Add page" tile
@@ -325,8 +326,39 @@ class BuilderView(QWidget):
         props = QWidget(); pl = QVBoxLayout(props); pl.setContentsMargins(12, 8, 12, 12)
         side.setWidget(props)
         lay.addWidget(side)
-        self.preview = PagePreview()
-        lay.addWidget(self.preview, 1)
+        # The canvas with the hand tools (prototype: layout_canvas.py).
+        stage = QWidget(); sl = QVBoxLayout(stage); sl.setContentsMargins(0, 0, 0, 0); sl.setSpacing(0)
+        tools = QWidget(); tools.setObjectName("DetailsPane"); tools.setAttribute(Qt.WA_StyledBackground, True)
+        tl = QHBoxLayout(tools); tl.setContentsMargins(10, 4, 10, 4); tl.setSpacing(4)
+        self.tool_buttons = {}
+        group = QButtonGroup(self)
+        for key, label, tip in (("knife", "Knife", "Drag across a panel to cut it. Snaps to straight and 45°; Shift: 15° steps; Alt: free."),
+                                ("inset", "Inset panel", "Drag a rectangle: a panel on top of the others."),
+                                ("merge", "Merge", "Click a gutter to join the panels on both sides, or an inset to remove it.")):
+            b = QPushButton(label); b.setCheckable(True); b.setToolTip(tip); b.setProperty("tool", key)
+            group.addButton(b); tl.addWidget(b); self.tool_buttons[key] = b
+        group.buttonClicked.connect(lambda b: self.set_tool(b.property("tool")))
+        tl.addSpacing(12)
+        self.blank_btn = QPushButton("Blank page"); self.blank_btn.setToolTip("Start over from one panel")
+        self.undo_btn = QPushButton("Undo"); self.redo_btn = QPushButton("Redo")
+        for b in (self.blank_btn, self.undo_btn, self.redo_btn):
+            tl.addWidget(b)
+        tl.addStretch()
+        sl.addWidget(tools)
+        self.tool_hint = QLabel(); self.tool_hint.setObjectName("Hint"); self.tool_hint.setContentsMargins(12, 4, 12, 2)
+        sl.addWidget(self.tool_hint)
+        self.preview = LayoutCanvas()
+        sl.addWidget(self.preview, 1)
+        lay.addWidget(stage, 1)
+        self.preview.layout_edited.connect(self._layout_edited)
+        self.preview.message.connect(self.tool_hint.setText)
+        self.blank_btn.clicked.connect(self.blank_layout)
+        self.undo_btn.clicked.connect(self.undo); self.redo_btn.clicked.connect(self.redo)
+        QShortcut(QKeySequence.Undo, self, self.undo)
+        QShortcut(QKeySequence.Redo, self, self.redo)
+        self.undo_stack: list[Page] = []
+        self.redo_stack: list[Page] = []
+        self.set_tool("knife")
 
         size = QGroupBox("Page size"); sf = QFormLayout(size)
         self.paper = QComboBox()
@@ -382,6 +414,7 @@ class BuilderView(QWidget):
     def load(self, project: Project, number: int) -> None:
         self.project = project
         self.saved = self.draft = project.load_page(number)
+        self.undo_stack, self.redo_stack = [], []
         self._loading = True
         p, s = self.draft, self.draft.size
         named = next((n for n, (w, h) in PAPER_SIZES.items() if (w, h) == (s.trim_w, s.trim_h)), "Custom")
@@ -399,6 +432,51 @@ class BuilderView(QWidget):
     @property
     def dirty(self) -> bool:
         return self.draft is not None and self.draft != self.saved
+
+    # ---------- hand tools (prototype) ----------
+    TOOL_HINTS = {
+        "knife": "Knife: drag across a panel to cut it. Snaps to straight and 45° (Shift: 15° steps, Alt: free).",
+        "inset": "Inset panel: drag a rectangle to put a panel on top of the others.",
+        "merge": "Merge: click a gutter to join the panels on both sides, or click an inset to remove it.",
+    }
+
+    def set_tool(self, tool: str) -> None:
+        self.preview.tool = tool
+        self.tool_buttons[tool].setChecked(True)
+        self.tool_hint.setText(self.TOOL_HINTS[tool])
+        self.preview.update()
+
+    def _layout_edited(self, layout: dict) -> None:
+        d = self.draft
+        try:
+            new = page_manual(d.number, d.size, layout, gutter=d.gutter, reading=d.reading, style=d.style)
+            new = replace(new, balloons=d.balloons, art=d.art)
+            new.panels()  # refuses a cut whose panels the gutter would swallow
+        except ValueError as e:
+            self.tool_hint.setText(f"No change: {e}.")
+            return
+        self.undo_stack.append(d)
+        self.redo_stack.clear()
+        self.set_draft(new)
+        self.dirty_changed.emit(self.dirty)  # also refreshes the status bar's panel count
+        self.tool_hint.setText(self.TOOL_HINTS[self.preview.tool])
+
+    def blank_layout(self) -> None:
+        if self.draft:
+            from cpb_core.layouts.knife import empty
+            self._layout_edited(empty())
+
+    def undo(self) -> None:
+        if self.undo_stack:
+            self.redo_stack.append(self.draft)
+            self.set_draft(self.undo_stack.pop())
+            self.dirty_changed.emit(self.dirty)
+
+    def redo(self) -> None:
+        if self.redo_stack:
+            self.undo_stack.append(self.draft)
+            self.set_draft(self.redo_stack.pop())
+            self.dirty_changed.emit(self.dirty)
 
     # ---------- editing ----------
     def _paper_changed(self, name: str) -> None:
@@ -466,7 +544,8 @@ class BuilderView(QWidget):
         self.stroke.setStyleSheet(f"QPushButton {{ border-left: 14px solid {self._stroke_color}; }}")
         r = p.layout
         how = {"bsp": f"Random layout, seed {r.get('seed')} ({r.get('mode')})", "preset": f"Preset {r.get('name')}",
-               "grid": "Grid"}.get(r.get("kind"), "Custom cells")
+               "grid": "Grid", "manual": "Hand-cut layout"}.get(r.get("kind"), "Custom cells")
+        self.undo_btn.setEnabled(bool(self.undo_stack)); self.redo_btn.setEnabled(bool(self.redo_stack))
         asked = r.get("panels")
         note = f" Asked for {asked}; only {len(p.cells)} fit." if asked and asked > len(p.cells) else ""
         self.layout_info.setText(f"{how} · {len(p.cells)} panels · {'right to left' if p.reading == 'rtl' else 'left to right'}.{note}")

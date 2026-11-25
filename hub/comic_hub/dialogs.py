@@ -231,12 +231,17 @@ class AddPageDialog(QDialog):
         f = QFormLayout()
         self.panels = QSpinBox(); self.panels.setRange(1, 8); self.panels.setValue(5)
         self.mode = QComboBox()
-        for key, label in [("auto", "Random, balanced"), ("rows", "Rows"), ("cols", "Columns"), ("chaos", "Chaos")]:
+        for key, label in [("blank", "Blank: cut it by hand"), ("auto", "Random, balanced"), ("rows", "Random rows"),
+                           ("cols", "Random columns"), ("chaos", "Random chaos")]:
             self.mode.addItem(label, key)
+        # Panels only matter for the random layouts.
+        self.mode.currentIndexChanged.connect(lambda _: self.panels.setEnabled(self.mode.currentData() != "blank"))
+        self.panels.setEnabled(False)
         self.status = _status_combo()
         f.addRow("Panels:", self.panels); f.addRow("Layout:", self.mode); f.addRow("Status:", self.status)
         lay.addLayout(f)
         self.open_builder = QCheckBox("Open it in the Page builder")
+        self.open_builder.setChecked(True)
         lay.addWidget(self.open_builder)
         btns = QHBoxLayout()
         more = QPushButton("More than one…"); more.clicked.connect(lambda: (self.reject(), self.wants_batch.emit()))
@@ -429,12 +434,9 @@ class LayoutOptionsDialog(QDialog):
         pl.addWidget(self.presets)
         if result.errors:
             pl.addWidget(_hint("Couldn't read: " + ", ".join(n for n, _ in result.errors)))
-        self.tabs.addTab(pre, "Presets")
-        self.tabs.addTab(QWidget(), "Grid")
-        self.tabs.setTabEnabled(2, False)
-        self.tabs.setTabToolTip(2, "The merge grid comes back in a later milestone")
-        if page.layout.get("kind") == "preset":
-            self.tabs.setCurrentIndex(1)
+        # Presets come first: the randomizer is for getting unstuck, not the default.
+        self.tabs.insertTab(0, pre, "Presets")
+        self.tabs.setCurrentWidget(bsp if page.layout.get("kind") == "bsp" else pre)
 
         btns = QHBoxLayout()
         roll = QPushButton(icons.icon("dice"), "Roll again"); roll.clicked.connect(self._roll)

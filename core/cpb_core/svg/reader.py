@@ -23,7 +23,7 @@ from ..layouts.cells import Cell
 from ..model import Page, PanelStyle
 from .ns import BORDERS_FORMAT, CPB, FORMAT, FORMAT_VERSION, KNOWN_PREFIXES, SVG, XLINK, is_owned, q
 from .letters import read_balloons
-from .writer import LAYERS, apply_page, panel_path, serialize
+from .writer import LAYERS, apply_page, panel_d, serialize
 
 _NS_N = re.compile(r"^ns\d+$")
 HUB_LAYERS = {layer_id for layer_id, _ in LAYERS}
@@ -198,7 +198,7 @@ def parse_page(text: Union[str, bytes]) -> PageDocument:
                 balloons=balloons or None, art=art)
 
     # A panel counts as edited elsewhere when its path no longer matches what the hub would draw.
-    expected = {p.index: panel_path(page, p.rect) for p in page.panels()}
+    expected = {p.index: panel_d(page, p) for p in page.panels()}
     modified = [int(el.get(q(CPB, "index"))) for el in paths
                 if el.get("d") != expected.get(int(el.get(q(CPB, "index"), "0")))]
     return PageDocument(page=page, root=root, modified_panels=modified, edited_balloons=edited)
