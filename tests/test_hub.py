@@ -220,8 +220,8 @@ def test_slide_gutters_and_edit_insets_with_select(window, app):
     c = b.preview
     live = b.draft.geometry().live
     b.set_tool("knife")
-    # Shift puts the cut through the middle, wherever you drag it.
-    _drag(c, (live.x + 5, live.y + 20), (live.right - 5, live.y + 21), Qt.ShiftModifier)
+    # Ctrl puts the cut through the middle, wherever you drag it.
+    _drag(c, (live.x + 5, live.y + 20), (live.right - 5, live.y + 21), Qt.ControlModifier)
     top, bottom = b.draft.panels()
     assert top.rect.h == pytest.approx(bottom.rect.h, abs=0.01)
     undo_depth = len(b.undo_stack)
@@ -248,6 +248,20 @@ def test_slide_gutters_and_edit_insets_with_select(window, app):
     c.keyPressEvent(QKeyEvent(QEvent.KeyPress, Qt.Key_Delete, Qt.NoModifier))
     assert not any(p.on_top for p in b.draft.panels())
     b.saved = b.draft
+
+
+def test_restore_project_defaults_and_undo_it(window, app):
+    window.selected = 4
+    window.go("builder")
+    b = window.builder
+    original = b.draft
+    assert not b.restore_btn.isEnabled()
+    b.gutter.set_mm(7); b.margin.set_mm(15); b._changed()
+    assert b.restore_btn.isEnabled() and b.draft.gutter == 7
+    b.restore_defaults()
+    assert b.draft == original and b.gutter.mm() == original.gutter and not b.restore_btn.isEnabled()
+    b.undo()
+    assert b.draft.gutter == 7 and b.gutter.mm() == 7 and b.margin.mm() == 15
 
 
 def test_presets_can_be_cut_further(window, app):

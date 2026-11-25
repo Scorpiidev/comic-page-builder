@@ -138,10 +138,12 @@ Photoshop, Illustrator and Krita. The plan and every decision live in
     paper halo, presets/random layouts convert to a cut tree) and the Page
     builder's Select / Knife / Inset panel / Merge tools with undo
     (`hub/comic_hub/layout_canvas.py`). Round 2 (Ivón's feedback): Shift
-    centres a cut in its panel (like Maya's edge-loop centre; Ctrl is now
-    15° steps), gutters slide by dragging, insets have their own cut tree
+    snaps to 15° steps and Ctrl centres a cut in its panel (like Maya's
+    edge-loop centre; Ivón swapped them from the first try), gutters slide by dragging, insets have their own cut tree
     (in inset coordinates, so cuts move with them), Select moves/resizes
-    insets with 8 handles, "Gap around insets" is a per-layout toggle. Blank pages and Add page now
+    insets with 8 handles, "Gap around insets" is a per-layout toggle. **Restore project
+    defaults** in the builder's side panel puts size, style and gutter back
+    to Project settings (one undo step; the layout stays). Blank pages and Add page now
     default to a blank hand-cut page; Layout options opens on Presets.
     **Known gap:** the Photoshop importer still builds rectangle frames
     from `cpb:rect`, so slanted panels come in as their bounding boxes;

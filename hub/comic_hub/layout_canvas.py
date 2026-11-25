@@ -5,8 +5,8 @@ The Page builder's canvas for hand-cut layouts (prototype).
             inset to select it, drag it to move, drag a handle to resize.
             Delete removes the selected inset, or merges the selected gutter.
     Knife   drag across a panel to cut it (insets too). Snaps to straight
-            and 45°; Shift moves the cut to the middle of the panel (like
-            Maya's edge-loop centre), Ctrl snaps to 15° steps, Alt is free.
+            and 45°; Shift snaps to 15° steps, Ctrl moves the cut to the
+            middle of the panel (like Maya's edge-loop centre), Alt is free.
             Dragging a gutter slides it, so you can cut and then slide.
     Inset   drag a rectangle: a panel on top of the others.
     Merge   click a gutter to join the panels on both sides, or an inset to remove it.
@@ -152,14 +152,14 @@ class LayoutCanvas(PagePreview):
             dx, dy = b.x() - a.x(), b.y() - a.y()
             length = math.hypot(dx, dy)
             ang = math.degrees(math.atan2(dy, dx))
-            target = round(ang / 15) * 15 if mods & Qt.ControlModifier else round(ang / 45) * 45
-            if mods & Qt.ControlModifier or abs(ang - target) <= SNAP_DEG:
+            target = round(ang / 15) * 15 if mods & Qt.ShiftModifier else round(ang / 45) * 45
+            if mods & Qt.ShiftModifier or abs(ang - target) <= SNAP_DEG:
                 r = math.radians(target)
                 b = QPointF(a.x() + length * math.cos(r), a.y() + length * math.sin(r))
         p1, p2 = self.norm(a), self.norm(b)
         mid = ((p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2)
         leaf = knife.leaf_at(self.layout(), mid)
-        if leaf is not None and mods & Qt.ShiftModifier and math.dist(p1, p2) > 1e-6:
+        if leaf is not None and mods & Qt.ControlModifier and math.dist(p1, p2) > 1e-6:
             p1, p2 = knife.centred(leaf.points, p1, p2)
         return p1, p2, leaf
 
@@ -337,7 +337,7 @@ class LayoutCanvas(PagePreview):
                 p.drawLine(self.unnorm(span[0]), self.unnorm(span[1]))
                 live = self._live()
                 ang = math.degrees(math.atan2((p2[1] - p1[1]) * live.h, (p2[0] - p1[0]) * live.w)) % 180
-                label = f"{ang:.0f}°" + (" · centre" if self._mods & Qt.ShiftModifier else "")
+                label = f"{ang:.0f}°" + (" · centre" if self._mods & Qt.ControlModifier else "")
                 p.setPen(QColor(theme.ACCENT_TEXT))
                 p.drawText(self.to_px(b.x(), b.y()) + QPointF(12, -10), label)
         elif self.tool == "inset":

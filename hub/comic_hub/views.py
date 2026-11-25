@@ -333,7 +333,7 @@ class BuilderView(QWidget):
         self.tool_buttons = {}
         group = QButtonGroup(self)
         for key, label, tip in (("select", "Select", "Drag a gutter to slide it; click an inset to move or resize it. Delete removes."),
-                                ("knife", "Knife", "Drag across a panel to cut it. Shift: through the middle; Ctrl: 15° steps; Alt: free."),
+                                ("knife", "Knife", "Drag across a panel to cut it. Shift: 15° steps; Ctrl: through the middle; Alt: free."),
                                 ("inset", "Inset panel", "Drag a rectangle: a panel on top of the others."),
                                 ("merge", "Merge", "Click a gutter to join the panels on both sides, or an inset to remove it.")):
             b = QPushButton(label); b.setCheckable(True); b.setToolTip(tip); b.setProperty("tool", key)
@@ -407,6 +407,11 @@ class BuilderView(QWidget):
         self.layout_info = QLabel(); self.layout_info.setObjectName("Hint"); self.layout_info.setWordWrap(True)
         stf.addRow(self.layout_info)
         pl.addWidget(style)
+        self.restore_btn = QPushButton("Restore project defaults")
+        self.restore_btn.setToolTip("Page size, panel style and gutter go back to Project settings. "
+                                    "The layout stays, and Undo brings your numbers back.")
+        self.restore_btn.clicked.connect(self.restore_defaults)
+        pl.addWidget(self.restore_btn)
         pl.addStretch()
 
         self.paper.currentTextChanged.connect(self._paper_changed)
@@ -424,6 +429,10 @@ class BuilderView(QWidget):
         self.project = project
         self.saved = self.draft = project.load_page(number)
         self.undo_stack, self.redo_stack = [], []
+        self._fill_fields()
+
+    def _fill_fields(self) -> None:
+        """Show the draft's numbers in the side panel (on load, undo and Restore defaults)."""
         self._loading = True
         p, s = self.draft, self.draft.size
         named = next((n for n, (w, h) in PAPER_SIZES.items() if (w, h) == (s.trim_w, s.trim_h)), "Custom")
@@ -445,7 +454,7 @@ class BuilderView(QWidget):
     # ---------- hand tools (prototype) ----------
     TOOL_HINTS = {
         "select": "Select: drag a gutter to slide it. Click an inset to move it or resize it by its handles. Delete removes.",
-        "knife": "Knife: drag across a panel to cut it. Shift: through the middle · Ctrl: 15° steps · Alt: no snapping. Drag a gutter to slide it.",
+        "knife": "Knife: drag across a panel to cut it. Shift: 15° steps · Ctrl: through the middle · Alt: no snapping. Drag a gutter to slide it.",
         "inset": "Inset panel: drag a rectangle to put a panel on top of the others.",
         "merge": "Merge: click a gutter to join the panels on both sides, or click an inset to remove it.",
     }
@@ -493,6 +502,31 @@ class BuilderView(QWidget):
         self.dirty_changed.emit(self.dirty)  # also refreshes the status bar's panel count
         self.tool_hint.setText(self.TOOL_HINTS[self.preview.tool])
 
+    def _defaults_page(self) -> Page:
+        """The draft with the project's size, panel style and gutter, layout unchanged."""
+        pr, d = self.project, self.draft
+        base = replace(d, gutter=pr.gutter, style=pr.style)
+        new = rebuild(base, pr.size) if pr.size != d.size else base
+        return replace(new, balloons=d.balloons, art=d.art)
+
+    def restore_defaults(self) -> None:
+        if not self.draft or not self.project:
+            return
+        try:
+            new = self._defaults_page()
+            new.panels()
+        except ValueError as e:
+            self.tool_hint.setText(f"Can't restore: {e}.")
+            return
+        if new == self.draft:
+            return
+        self.undo_stack.append(self.draft)
+        self.redo_stack.clear()
+        self.set_draft(new)
+        self._fill_fields()
+        self.dirty_changed.emit(self.dirty)
+        self.window().toast("Defaults restored", "Page size, panel style and gutter are the project's again. Undo brings yours back.")
+
     def blank_layout(self) -> None:
         if self.draft:
             from cpb_core.layouts.knife import empty
@@ -502,12 +536,14 @@ class BuilderView(QWidget):
         if self.undo_stack:
             self.redo_stack.append(self.draft)
             self.set_draft(self.undo_stack.pop())
+            self._fill_fields()  # Undo can bring back numbers too (after Restore defaults)
             self.dirty_changed.emit(self.dirty)
 
     def redo(self) -> None:
         if self.redo_stack:
             self.undo_stack.append(self.draft)
             self.set_draft(self.redo_stack.pop())
+            self._fill_fields()
             self.dirty_changed.emit(self.dirty)
 
     # ---------- editing ----------
@@ -582,6 +618,10 @@ class BuilderView(QWidget):
         self.gap_box.setChecked(r.get("inset_gap", True))
         self.gap_box.setEnabled(r.get("kind") == "manual" and bool(r.get("insets")))
         self.gap_box.blockSignals(False)
+        try:
+            self.restore_btn.setEnabled(self.project is not None and self._defaults_page() != p)
+        except ValueError:
+            self.restore_btn.setEnabled(True)
         asked = r.get("panels")
         note = f" Asked for {asked}; only {len(p.cells)} fit." if asked and asked > len(p.cells) else ""
         self.layout_info.setText(f"{how} · {len(p.cells)} panels · {'right to left' if p.reading == 'rtl' else 'left to right'}.{note}")
