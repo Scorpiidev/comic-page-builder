@@ -51,9 +51,9 @@ def test_cuts_only_split_the_panel_they_start_in_and_merge_undoes_them():
     assert len(knife.shapes(layout)) == 3
     segs = knife.cut_segments(layout)
     assert len(segs) == 2
-    top_cut = next(path for path, *_ in segs if path == ())
+    top_cut = next(where for where, *_ in segs if where == (-1, ()))
     assert len(knife.shapes(knife.merge(layout, top_cut))) == 1    # merging the first cut drops the one inside it
-    inner = next(path for path, *_ in segs if path != ())
+    inner = next(where for where, *_ in segs if where != (-1, ()))
     assert len(knife.shapes(knife.merge(layout, inner))) == 2
 
 
@@ -68,11 +68,42 @@ def test_insets_sit_on_top_with_a_halo():
     layout = knife.add_inset(knife.cut(knife.empty(), (0, 0.5), (1, 0.5)), 0.55, 0.35, 0.35, 0.3)
     page = page_manual(1, SIZE, layout)
     panels = page.panels()
-    assert sum(p.on_top for p in panels) == 1
+    assert sum(p.on_top for p in panels) == 1 and panels[-1].on_top is not None
     svg = page_to_svg(page)
-    assert svg.index('id="cpb-halo-') < svg.index('cpb:inset="true"')
+    assert svg.index('id="cpb-inset-gap-1"') < svg.index('cpb:inset="1"')
     assert parse_page(svg).page == page
     assert len(knife.shapes(knife.remove_inset(layout, 0))) == 2
+    no_gap = page_manual(1, SIZE, dict(layout, inset_gap=False))
+    assert "cpb-inset-gap" not in page_to_svg(no_gap)
+
+
+def test_insets_can_be_cut_and_their_cuts_move_with_them():
+    layout = knife.add_inset(knife.empty(), 0.5, 0.5, 0.4, 0.4)
+    layout = knife.cut(layout, (0.7, 0.45), (0.7, 0.95))      # over the inset: cuts the inset, not the page
+    assert [s.inset for s in knife.shapes(layout)] == [-1, 0, 0]
+    page = page_manual(1, SIZE, layout, gutter=4)
+    a, b = [p for p in page.panels() if p.on_top]
+    assert b.rect.x - a.rect.right == pytest.approx(4, abs=0.01)
+    moved = knife.set_inset_rect(layout, 0, 0.1, 0.1, 0.4, 0.4)
+    xs = sorted(s.bbox.x for s in knife.shapes(moved) if s.inset == 0)
+    assert xs == pytest.approx([0.1, 0.3])                      # the cut is still in the middle of the inset
+    (where, *_), = [seg for seg in knife.cut_segments(layout) if seg[0][0] == 0]
+    assert len(knife.shapes(knife.merge(layout, where))) == 2
+
+
+def test_sliding_a_cut_keeps_its_angle():
+    layout = knife.cut(knife.empty(), (0.0, 0.3), (1.0, 0.5))
+    slid = knife.slide(layout, (-1, ()), 0.0, 0.1)
+    x1, y1, x2, y2 = slid["tree"]["cut"]
+    assert (y2 - y1) / (x2 - x1) == pytest.approx(0.2)          # same slope
+    assert knife.cut_segments(slid)[0][1][1] > knife.cut_segments(layout)[0][1][1]
+    with pytest.raises(ValueError):
+        knife.slide(layout, (-1, ()), 0.0, 0.9)                 # would push the bottom panel off the page
+
+
+def test_centred_cut_splits_the_panel_in_half():
+    (p1, p2) = knife.centred(knife.SQUARE, (0.1, 0.2), (0.9, 0.2))
+    assert p1[1] == pytest.approx(0.5) and p2[1] == pytest.approx(0.5)
 
 
 def test_manual_pages_round_trip_and_reflow():

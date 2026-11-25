@@ -1,15 +1,20 @@
 """
-The Page builder's canvas for manual layouts (prototype): cut panels with a
-knife at any angle, merge cuts back, and draw inset panels on top.
+The Page builder's canvas for hand-cut layouts (prototype).
 
-    Knife   drag a line across a panel. It snaps to straight and 45°;
-            Shift snaps to 15° steps, Alt turns snapping off.
+    Select  drag a gutter to slide its cut (it keeps its angle); click an
+            inset to select it, drag it to move, drag a handle to resize.
+            Delete removes the selected inset, or merges the selected gutter.
+    Knife   drag across a panel to cut it (insets too). Snaps to straight
+            and 45°; Shift moves the cut to the middle of the panel (like
+            Maya's edge-loop centre), Ctrl snaps to 15° steps, Alt is free.
+            Dragging a gutter slides it, so you can cut and then slide.
     Inset   drag a rectangle: a panel on top of the others.
-    Merge   click a gutter to remove that cut (and the cuts inside it),
-            or click an inset to remove it.
+    Merge   click a gutter to join the panels on both sides, or an inset to remove it.
 
-All the geometry is cpb_core.layouts.knife; this file only turns mouse
-positions into its 0..1 live-area coordinates and draws the feedback.
+All the geometry is cpb_core.layouts.knife; this file turns mouse positions
+into its 0..1 live-area coordinates and draws the feedback. A drag sends
+``layout_preview`` while it moves and ``layout_edited`` once at the end, so
+one drag is one undo step.
 """
 
 from __future__ import annotations
@@ -24,10 +29,16 @@ from cpb_core.layouts import knife
 from . import theme
 from .widgets import PagePreview
 
-TOOLS = ("knife", "inset", "merge")
+TOOLS = ("select", "knife", "inset", "merge")
 SNAP_DEG = 6.0      # how close to straight / 45° a cut has to be to snap
-PICK_MM = 4.0       # how close to a gutter a Merge click has to be
+PICK_MM = 3.0       # how close to a gutter counts as on it
+HANDLE_PX = 5.0
 MIN_INSET_MM = 8.0
+# Handles on a selected inset: (x side, y side), -1 = left/top, 0 = middle, 1 = right/bottom.
+HANDLES = [(-1, -1), (0, -1), (1, -1), (1, 0), (1, 1), (0, 1), (-1, 1), (-1, 0)]
+HANDLE_CURSORS = {(-1, -1): Qt.SizeFDiagCursor, (1, 1): Qt.SizeFDiagCursor, (1, -1): Qt.SizeBDiagCursor,
+                  (-1, 1): Qt.SizeBDiagCursor, (0, -1): Qt.SizeVerCursor, (0, 1): Qt.SizeVerCursor,
+                  (-1, 0): Qt.SizeHorCursor, (1, 0): Qt.SizeHorCursor}
 
 
 def _seg_dist(q, a, b) -> float:
@@ -38,17 +49,19 @@ def _seg_dist(q, a, b) -> float:
 
 
 class LayoutCanvas(PagePreview):
-    layout_edited = Signal(dict)   # a new manual layout
+    layout_preview = Signal(dict)  # while dragging
+    layout_edited = Signal(dict)   # a finished edit: one undo step
     message = Signal(str)          # feedback for the hint line (a refused cut, say)
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setMouseTracking(True)
         self.setFocusPolicy(Qt.StrongFocus)
-        self.tool = "knife"
-        self._press: QPointF | None = None   # page mm
-        self._now: QPointF | None = None
-        self._hover = None                   # ("cut", path) or ("inset", i)
+        self.tool = "select"
+        self.selection = None      # ("inset", i) or ("cut", where)
+        self._hover = None
+        self._drag = None          # what the current drag does, see mousePressEvent
+        self._mods = Qt.NoModifier
 
     # ---------- coordinates ----------
     def _frame(self):
@@ -82,57 +95,179 @@ class LayoutCanvas(PagePreview):
         # Presets and random layouts become a cut tree the first time you edit them.
         return knife.from_cells(self._page.cells) or knife.empty()
 
-    # ---------- snapping ----------
-    def _snapped_end(self, modifiers) -> QPointF:
-        a, b = self._press, self._now
-        if modifiers & Qt.AltModifier:
-            return b
-        dx, dy = b.x() - a.x(), b.y() - a.y()
-        length = math.hypot(dx, dy)
-        ang = math.degrees(math.atan2(dy, dx))
-        if modifiers & Qt.ShiftModifier:
-            target = round(ang / 15) * 15
-        else:
-            target = round(ang / 45) * 45
-            if abs(ang - target) > SNAP_DEG:
-                return b
-        r = math.radians(target)
-        return QPointF(a.x() + length * math.cos(r), a.y() + length * math.sin(r))
+    def set_page(self, page) -> None:
+        super().set_page(page)
+        # A selection that no longer exists (after undo, say) is dropped.
+        if page is not None and self.selection is not None:
+            kind, what = self.selection
+            lay = self.layout()
+            if kind == "inset" and what >= len(knife.insets(lay)):
+                self.selection = None
+            if kind == "cut" and what not in [w for w, *_ in knife.cut_segments(lay)]:
+                self.selection = None
+
+    # ---------- hit testing ----------
+    def _inset_rect_px(self, i: int) -> QRectF:
+        x, y, w, h = knife.insets(self.layout())[i]["rect"]
+        return QRectF(self.unnorm((x, y)), self.unnorm((x + w, y + h)))
+
+    def _handle_at(self, pos: QPointF):
+        if not self.selection or self.selection[0] != "inset":
+            return None
+        r = self._inset_rect_px(self.selection[1])
+        for hx, hy in HANDLES:
+            c = QPointF(r.center().x() + hx * r.width() / 2, r.center().y() + hy * r.height() / 2)
+            if abs(c.x() - pos.x()) <= HANDLE_PX + 2 and abs(c.y() - pos.y()) <= HANDLE_PX + 2:
+                return (hx, hy)
+        return None
+
+    def _gutter_at(self, mm: QPointF):
+        live = self._live()
+        q = (mm.x(), mm.y())
+        best = None
+        for where, a, b in knife.cut_segments(self.layout()):
+            pa = (live.x + a[0] * live.w, live.y + a[1] * live.h)
+            pb = (live.x + b[0] * live.w, live.y + b[1] * live.h)
+            dist = _seg_dist(q, pa, pb)
+            if dist <= max(PICK_MM, self._page.gutter / 2 + 0.5) and (best is None or dist < best[0]):
+                best = (dist, where)
+        return best[1] if best else None
+
+    def _hit(self, pos: QPointF):
+        """What's under the pointer for Select / Knife / Merge: a handle, a gutter or an inset."""
+        h = self._handle_at(pos)
+        if h is not None:
+            return ("handle", h)
+        mm = self.to_mm(pos)
+        g = self._gutter_at(mm)
+        if g is not None:
+            return ("cut", g)
+        i = knife.inset_at(self.layout(), self.norm(mm))
+        return ("inset", i) if i >= 0 else None
+
+    # ---------- knife snapping ----------
+    def _cut_line(self, a: QPointF, b: QPointF, mods):
+        """The cut as two page points (0..1), with angle snapping and Shift's centring applied."""
+        if not mods & Qt.AltModifier:
+            dx, dy = b.x() - a.x(), b.y() - a.y()
+            length = math.hypot(dx, dy)
+            ang = math.degrees(math.atan2(dy, dx))
+            target = round(ang / 15) * 15 if mods & Qt.ControlModifier else round(ang / 45) * 45
+            if mods & Qt.ControlModifier or abs(ang - target) <= SNAP_DEG:
+                r = math.radians(target)
+                b = QPointF(a.x() + length * math.cos(r), a.y() + length * math.sin(r))
+        p1, p2 = self.norm(a), self.norm(b)
+        mid = ((p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2)
+        leaf = knife.leaf_at(self.layout(), mid)
+        if leaf is not None and mods & Qt.ShiftModifier and math.dist(p1, p2) > 1e-6:
+            p1, p2 = knife.centred(leaf.points, p1, p2)
+        return p1, p2, leaf
 
     # ---------- mouse ----------
     def mousePressEvent(self, e) -> None:
         if not self._page or e.button() != Qt.LeftButton:
             return
         self.setFocus()
+        pos, mm = e.position(), self.to_mm(e.position())
+        lay = self.layout()
+        hit = self._hit(pos) if self.tool in ("select", "knife", "merge") else None
         if self.tool == "merge":
-            self._merge_at(self.to_mm(e.position()))
+            if hit is None or hit[0] == "handle":
+                self.message.emit("Click on a gutter to join the panels on both sides, or on an inset to remove it.")
+                return
+            self.selection = self._hover = None
+            self.layout_edited.emit(knife.remove_inset(lay, hit[1]) if hit[0] == "inset" else knife.merge(lay, hit[1]))
             return
-        self._press = self._now = self.to_mm(e.position())
+        if hit and hit[0] == "cut":                       # Select or Knife on a gutter: slide it
+            self.selection = hit
+            self._drag = ("slide", hit[1], mm, lay)
+        elif self.tool == "select" and hit and hit[0] == "handle":
+            i = self.selection[1]
+            self._drag = ("resize", i, hit[1], mm, list(knife.insets(lay)[i]["rect"]), lay)
+        elif self.tool == "select" and hit and hit[0] == "inset":
+            self.selection = hit
+            self._drag = ("move", hit[1], mm, list(knife.insets(lay)[hit[1]]["rect"]), lay)
+        elif self.tool == "select":
+            self.selection = None
+            self._drag = None
+        else:                                             # Knife or Inset: draw
+            self._drag = ("draw", mm, mm)
+        self._mods = e.modifiers()
         self.update()
 
     def mouseMoveEvent(self, e) -> None:
         if not self._page:
             return
-        mm = self.to_mm(e.position())
-        if self._press is not None:
-            self._now = mm
-            self._mods = e.modifiers()
-        elif self.tool == "merge":
-            self._hover = self._pick(mm)
-        self.update()
+        pos, mm = e.position(), self.to_mm(e.position())
+        self._mods = e.modifiers()
+        d = self._drag
+        if d is None:
+            self._hover = self._hit(pos) if self.tool != "inset" else None
+            kind = self._hover[0] if self._hover else None
+            if kind == "handle":
+                self.setCursor(HANDLE_CURSORS[self._hover[1]])
+            elif kind == "cut":
+                self.setCursor(Qt.SplitVCursor if self.tool != "merge" else Qt.PointingHandCursor)
+            elif kind == "inset" and self.tool in ("select", "merge"):
+                self.setCursor(Qt.SizeAllCursor if self.tool == "select" else Qt.PointingHandCursor)
+            else:
+                self.setCursor(Qt.CrossCursor if self.tool in ("knife", "inset") else Qt.ArrowCursor)
+            self.update()
+            return
+        if d[0] == "draw":
+            self._drag = ("draw", d[1], mm)
+            self.update()
+            return
+        new = self._dragged(mm)
+        if new is not None:
+            self._pending = new
+            self.layout_preview.emit(new)
+
+    def _dragged(self, mm: QPointF):
+        """The layout a slide / move / resize drag has made so far, or None if refused."""
+        d = self._drag
+        live = self._live()
+        try:
+            if d[0] == "slide":
+                _, where, start, base = d
+                return knife.slide(base, where, (mm.x() - start.x()) / live.w, (mm.y() - start.y()) / live.h)
+            if d[0] == "move":
+                _, i, start, (x, y, w, h), base = d
+                dx, dy = (mm.x() - start.x()) / live.w, (mm.y() - start.y()) / live.h
+                return knife.set_inset_rect(base, i, x + dx, y + dy, w, h)
+            if d[0] == "resize":
+                _, i, (hx, hy), start, (x, y, w, h), base = d
+                dx, dy = (mm.x() - start.x()) / live.w, (mm.y() - start.y()) / live.h
+                x0, y0, x1, y1 = x, y, x + w, y + h
+                if hx < 0: x0 = min(x0 + dx, x1 - MIN_INSET_MM / live.w)
+                if hx > 0: x1 = max(x1 + dx, x0 + MIN_INSET_MM / live.w)
+                if hy < 0: y0 = min(y0 + dy, y1 - MIN_INSET_MM / live.h)
+                if hy > 0: y1 = max(y1 + dy, y0 + MIN_INSET_MM / live.h)
+                return knife.set_inset_rect(base, i, x0, y0, x1 - x0, y1 - y0)
+        except ValueError as err:
+            self.message.emit(f"Can't go further: {err}.")
+        return None
 
     def mouseReleaseEvent(self, e) -> None:
-        if self._press is None:
+        d, self._drag = self._drag, None
+        if d is None:
             return
-        a, self._now = self._press, self.to_mm(e.position())
-        b = self._snapped_end(e.modifiers()) if self.tool == "knife" else self._now
-        self._press = self._now = None
+        mm = self.to_mm(e.position())
+        if d[0] != "draw":
+            new = getattr(self, "_pending", None)
+            self._pending = None
+            if new is not None:
+                self.layout_edited.emit(new)
+            self.update()
+            return
+        a, b = d[1], mm
         self.update()
         if self.tool == "knife":
             if math.dist((a.x(), a.y()), (b.x(), b.y())) < 3:
                 return  # a click, not a cut
+            p1, p2, _leaf = self._cut_line(a, b, e.modifiers())
             try:
-                self.layout_edited.emit(knife.cut(self.layout(), self.norm(a), self.norm(b)))
+                self.layout_edited.emit(knife.cut(self.layout(), p1, p2))
             except ValueError as err:
                 self.message.emit(f"No cut: {err}.")
         elif self.tool == "inset":
@@ -141,34 +276,23 @@ class LayoutCanvas(PagePreview):
                 self.message.emit(f"Insets need to be at least {MIN_INSET_MM:g} mm each way.")
                 return
             (nx0, ny0), (nx1, ny1) = self.norm(QPointF(x0, y0)), self.norm(QPointF(x1, y1))
-            self.layout_edited.emit(knife.add_inset(self.layout(), nx0, ny0, nx1 - nx0, ny1 - ny0))
+            new = knife.add_inset(self.layout(), nx0, ny0, nx1 - nx0, ny1 - ny0)
+            self.selection = ("inset", len(knife.insets(new)) - 1)
+            self.layout_edited.emit(new)
 
-    def _pick(self, mm: QPointF):
-        """The inset under the pointer, else the nearest cut within reach."""
-        lay = self.layout()
-        live = self._live()
-        q = (mm.x(), mm.y())
-        for i, (x, y, w, h) in reversed(list(enumerate(lay.get("insets", [])))):
-            if live.x + x * live.w <= q[0] <= live.x + (x + w) * live.w and live.y + y * live.h <= q[1] <= live.y + (y + h) * live.h:
-                return ("inset", i)
-        best = None
-        for path, a, b in knife.cut_segments(lay):
-            pa = (live.x + a[0] * live.w, live.y + a[1] * live.h)
-            pb = (live.x + b[0] * live.w, live.y + b[1] * live.h)
-            dist = _seg_dist(q, pa, pb)
-            if dist <= PICK_MM and (best is None or dist < best[0]):
-                best = (dist, path)
-        return ("cut", best[1]) if best else None
-
-    def _merge_at(self, mm: QPointF) -> None:
-        hit = self._pick(mm)
-        if hit is None:
-            self.message.emit("Click on a gutter to merge the panels on both sides, or on an inset to remove it.")
+    def keyPressEvent(self, e) -> None:
+        if e.key() in (Qt.Key_Delete, Qt.Key_Backspace) and self.selection and self._page:
+            kind, what = self.selection
+            self.selection = None
+            lay = self.layout()
+            self.layout_edited.emit(knife.remove_inset(lay, what) if kind == "inset" else knife.merge(lay, what))
             return
-        kind, what = hit
-        lay = self.layout()
-        self._hover = None
-        self.layout_edited.emit(knife.remove_inset(lay, what) if kind == "inset" else knife.merge(lay, what))
+        if e.key() == Qt.Key_Escape:
+            self.selection = None
+            self._drag = None
+            self.update()
+            return
+        super().keyPressEvent(e)
 
     # ---------- painting ----------
     def paintEvent(self, event) -> None:
@@ -178,32 +302,44 @@ class LayoutCanvas(PagePreview):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
         lay = self.layout()
-        if self.tool == "merge":
-            for path, a, b in knife.cut_segments(lay):
-                on = self._hover == ("cut", path)
-                p.setPen(QPen(QColor(theme.ACCENT), 4 if on else 1.5, Qt.SolidLine if on else Qt.DashLine))
-                p.drawLine(self.unnorm(a), self.unnorm(b))
-            if self._hover and self._hover[0] == "inset":
-                x, y, w, h = lay["insets"][self._hover[1]]
-                p.setPen(QPen(QColor(theme.ACCENT), 3)); p.setBrush(QColor(217, 86, 138, 40))
-                p.drawRect(QRectF(self.unnorm((x, y)), self.unnorm((x + w, y + h))))
-        if self._press is None or self._now is None:
+        accent, tint = QColor(theme.ACCENT), QColor(217, 86, 138, 34)
+        if self.tool in ("select", "merge", "knife"):
+            for where, a, b in knife.cut_segments(lay):
+                on = ("cut", where) in (self._hover, self.selection)
+                if on or self.tool != "knife":
+                    p.setPen(QPen(accent, 4 if on else 1.2, Qt.SolidLine if on else Qt.DotLine))
+                    p.drawLine(self.unnorm(a), self.unnorm(b))
+        for state in (self._hover, self.selection):
+            if state and state[0] == "inset" and state[1] < len(knife.insets(lay)) and self.tool != "knife":
+                p.setPen(QPen(accent, 2)); p.setBrush(tint)
+                p.drawRect(self._inset_rect_px(state[1]))
+        if self.selection and self.selection[0] == "inset" and self.tool == "select":
+            r = self._inset_rect_px(self.selection[1])
+            p.setPen(QPen(QColor(theme.ACCENT_TEXT), 1)); p.setBrush(QColor("#ffffff"))
+            for hx, hy in HANDLES:
+                c = QPointF(r.center().x() + hx * r.width() / 2, r.center().y() + hy * r.height() / 2)
+                p.drawRect(QRectF(c.x() - HANDLE_PX, c.y() - HANDLE_PX, 2 * HANDLE_PX, 2 * HANDLE_PX))
+        d = self._drag
+        if not d or d[0] != "draw":
             return
+        a, b = d[1], d[2]
         if self.tool == "knife":
-            b = self._snapped_end(getattr(self, "_mods", Qt.NoModifier))
-            a = self._press
-            mid = self.norm(QPointF((a.x() + b.x()) / 2, (a.y() + b.y()) / 2))
-            leaf = knife.leaf_at(lay, mid)
-            span = knife.crossing(leaf.points, self.norm(a), self.norm(b)) if leaf and math.dist((a.x(), a.y()), (b.x(), b.y())) > 0.5 else None
-            if leaf is not None:
-                p.setPen(Qt.NoPen); p.setBrush(QColor(217, 86, 138, 30))
-                p.drawPolygon(QPolygonF([self.unnorm(pt) for pt in leaf.points]))
+            if math.dist((a.x(), a.y()), (b.x(), b.y())) <= 0.5:
+                return
+            p1, p2, leaf = self._cut_line(a, b, self._mods)
+            if leaf is None:
+                return
+            p.setPen(Qt.NoPen); p.setBrush(tint)
+            p.drawPolygon(QPolygonF([self.unnorm(pt) for pt in leaf.points]))
+            span = knife.crossing(leaf.points, p1, p2)
             if span:
-                p.setPen(QPen(QColor(theme.ACCENT), 2, Qt.DashLine))
+                p.setPen(QPen(accent, 2, Qt.DashLine))
                 p.drawLine(self.unnorm(span[0]), self.unnorm(span[1]))
-                ang = math.degrees(math.atan2(b.y() - a.y(), b.x() - a.x())) % 180
+                live = self._live()
+                ang = math.degrees(math.atan2((p2[1] - p1[1]) * live.h, (p2[0] - p1[0]) * live.w)) % 180
+                label = f"{ang:.0f}°" + (" · centre" if self._mods & Qt.ShiftModifier else "")
                 p.setPen(QColor(theme.ACCENT_TEXT))
-                p.drawText(self.to_px(b.x(), b.y()) + QPointF(10, -8), f"{ang:.0f}°")
+                p.drawText(self.to_px(b.x(), b.y()) + QPointF(12, -10), label)
         elif self.tool == "inset":
-            p.setPen(QPen(QColor(theme.ACCENT), 2, Qt.DashLine)); p.setBrush(QColor(217, 86, 138, 30))
-            p.drawRect(QRectF(self.to_px(self._press.x(), self._press.y()), self.to_px(self._now.x(), self._now.y())).normalized())
+            p.setPen(QPen(accent, 2, Qt.DashLine)); p.setBrush(tint)
+            p.drawRect(QRectF(self.to_px(a.x(), a.y()), self.to_px(b.x(), b.y())).normalized())

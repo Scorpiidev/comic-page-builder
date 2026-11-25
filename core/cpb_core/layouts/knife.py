@@ -18,7 +18,12 @@ each cut is a line at any angle instead of only straight across:
 - Edges made by a cut move in by half the gutter; edges on the live-area
   border stay put, exactly like ``cells.apply_gutter`` does for rectangles.
 - Insets are panels that sit on top of the others (overlapping panels).
-  The writer draws a paper-coloured halo behind them, a gutter wide.
+  Each inset has its own cut tree, in the inset's own 0..1 coordinates, so
+  its cuts move and resize with it. With "inset_gap" on (the default) the
+  writer draws a paper-coloured gap a gutter wide around each inset, so the
+  lines behind it stop short of its border.
+
+A cut is found by ``Where``: (inset index or -1 for the page, path in that tree).
 """
 
 from __future__ import annotations
@@ -31,7 +36,8 @@ from ..geometry import Rect
 from .cells import EPS, Cell, reading_order
 
 Point = tuple[float, float]
-Path = tuple[str, ...]  # how to walk the tree to a node: ("a", "b", ...)
+Path = tuple[str, ...]  # how to walk a tree to a node: ("a", "b", ...)
+Where = tuple[int, Path]  # (inset index, or -1 for the page's own tree; path in that tree)
 
 
 @dataclass(frozen=True)
@@ -40,8 +46,8 @@ class Shape:
 
     points: tuple[Point, ...]
     cut_edges: tuple[bool, ...]   # edge i (points[i] -> points[i+1]) came from a cut
-    path: Optional[Path]          # where it is in the tree; None for an inset
-    inset: int = -1               # index in "insets", or -1
+    path: Path                    # where it is in its tree
+    inset: int = -1               # index in "insets", or -1 for the page's own tree
 
     @property
     def bbox(self) -> Cell:
@@ -51,7 +57,7 @@ class Shape:
 
 def empty() -> dict:
     """A blank manual layout: one panel filling the live area."""
-    return {"kind": "manual", "tree": {}, "insets": []}
+    return {"kind": "manual", "tree": {}, "insets": [], "inset_gap": True}
 
 
 # ---------- polygon helpers ----------
@@ -119,28 +125,58 @@ def contains(points: Sequence[Point], q: Point) -> bool:
     return True
 
 
-# ---------- the tree ----------
+# ---------- the trees ----------
 SQUARE = ((0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0))
 
 
-def _walk(node: dict, points, flags, path: Path, out: list) -> None:
+def insets(layout: dict) -> list[dict]:
+    """The layout's insets as {"rect": [x, y, w, h], "tree": {...}} (early prototypes stored bare rects)."""
+    return [i if isinstance(i, dict) else {"rect": list(i), "tree": {}} for i in layout.get("insets", [])]
+
+
+def _to_page(rect, pt: Point) -> Point:
+    x, y, w, h = rect
+    return x + pt[0] * w, y + pt[1] * h
+
+
+def _to_local(rect, pt: Point) -> Point:
+    x, y, w, h = rect
+    return (pt[0] - x) / w, (pt[1] - y) / h
+
+
+def _walk(node: dict, points, flags, path: Path, out: list, inset: int) -> None:
     if not node.get("cut"):
-        out.append(Shape(tuple(points), tuple(flags), path))
+        out.append(Shape(tuple(points), tuple(flags), path, inset))
         return
     x1, y1, x2, y2 = node["cut"]
     for key, keep in (("a", 1), ("b", -1)):
         pts, fl = _clip(points, flags, (x1, y1), (x2, y2), keep)
         if len(pts) >= 3 and abs(_area(pts)) > 1e-9:
-            _walk(node.get(key, {}), pts, fl, path + (key,), out)
+            _walk(node.get(key, {}), pts, fl, path + (key,), out, inset)
 
 
-def shapes(layout: dict) -> list[Shape]:
-    """Every panel of a manual layout (tree leaves, then insets), gutter-free."""
+def _tree_shapes(tree: dict, inset: int) -> list[Shape]:
     out: list[Shape] = []
-    _walk(layout.get("tree", {}), list(SQUARE), [False] * 4, (), out)
-    for i, (x, y, w, h) in enumerate(layout.get("insets", [])):
-        out.append(Shape(((x, y), (x + w, y), (x + w, y + h), (x, y + h)), (True,) * 4, None, i))
+    _walk(tree, list(SQUARE), [False] * 4, (), out, inset)
     return out
+
+
+def shapes(layout: dict, local: bool = False) -> list[Shape]:
+    """
+    Every panel, gutter-free, in 0..1 live-area coordinates: the page's own
+    panels, then each inset's. With ``local``, inset panels stay in their
+    inset's own coordinates.
+    """
+    out = _tree_shapes(layout.get("tree", {}), -1)
+    for i, ins in enumerate(insets(layout)):
+        for s in _tree_shapes(ins["tree"], i):
+            pts = s.points if local else tuple(_to_page(ins["rect"], p) for p in s.points)
+            out.append(Shape(pts, s.cut_edges, s.path, i))
+    return out
+
+
+def _tree(layout: dict, inset: int) -> dict:
+    return layout["tree"] if inset < 0 else layout["insets"][inset]["tree"]
 
 
 def _node(tree: dict, path: Path) -> dict:
@@ -151,23 +187,35 @@ def _node(tree: dict, path: Path) -> dict:
 
 def _copy(layout: dict) -> dict:
     import json
-    return json.loads(json.dumps(layout))
+    new = json.loads(json.dumps(layout))
+    new["insets"] = insets(new)
+    new.setdefault("tree", {})
+    return new
+
+
+def inset_at(layout: dict, q: Point) -> int:
+    """The topmost inset under q, or -1."""
+    for i in reversed(range(len(insets(layout)))):
+        x, y, w, h = insets(layout)[i]["rect"]
+        if x <= q[0] <= x + w and y <= q[1] <= y + h:
+            return i
+    return -1
 
 
 def leaf_at(layout: dict, q: Point) -> Optional[Shape]:
-    """The tree panel under q (insets aren't cut by the knife)."""
+    """The panel under q, in page coordinates. Insets come first: they're on top."""
+    i = inset_at(layout, q)
     for s in shapes(layout):
-        if s.path is not None and contains(s.points, q):
+        if s.inset == i and contains(s.points, q):
             return s
     return None
 
 
 def cut(layout: dict, p1: Point, p2: Point) -> dict:
     """
-    Cut the panel under the middle of p1-p2 along the line through them.
-
-    Raises ValueError when the line misses that panel or would only shave
-    off a sliver.
+    Cut the panel under the middle of p1-p2 along the line through them
+    (page coordinates). Raises ValueError when the line misses that panel or
+    would only shave off a sliver.
     """
     if math.dist(p1, p2) < 1e-6:
         raise ValueError("the cut is too short")
@@ -180,39 +228,27 @@ def cut(layout: dict, p1: Point, p2: Point) -> dict:
     if any(len(h) < 3 or abs(_area(h)) < total * 0.02 for h in halves):
         raise ValueError("that cut doesn't split the panel")
     new = _copy(layout)
-    node = _node(new["tree"], leaf.path)
+    if leaf.inset >= 0:  # inset cuts live in the inset's own coordinates, so they move with it
+        rect = new["insets"][leaf.inset]["rect"]
+        p1, p2 = _to_local(rect, p1), _to_local(rect, p2)
+    node = _node(_tree(new, leaf.inset), leaf.path)
     node.clear()
     node.update({"cut": [round(v, 6) for v in (*p1, *p2)], "a": {}, "b": {}})
     return new
 
 
-def cut_segments(layout: dict) -> list[tuple[Path, Point, Point]]:
-    """Each cut as the segment you see on the page: (path to its node, start, end)."""
-    out = []
-
-    def walk(node, points, flags, path):
-        if not node.get("cut"):
-            return
-        x1, y1, x2, y2 = node["cut"]
-        # The visible cut is where the line crosses this node's region.
-        crossing = []
-        n = len(points)
-        for i in range(n):
-            p, q = points[i], points[(i + 1) % n]
-            sp, sq = _side((x1, y1), (x2, y2), p), _side((x1, y1), (x2, y2), q)
-            if abs(sp) < 1e-12:
-                crossing.append(p)
-            elif sp * sq < 0:
-                crossing.append(_intersect(p, q, (x1, y1), (x2, y2)))
-        if len(crossing) >= 2:
-            out.append((path, crossing[0], crossing[-1]))
-        for key, keep in (("a", 1), ("b", -1)):
-            pts, fl = _clip(points, flags, (x1, y1), (x2, y2), keep)
-            if len(pts) >= 3:
-                walk(node.get(key, {}), pts, fl, path + (key,))
-
-    walk(layout.get("tree", {}), list(SQUARE), [False] * 4, ())
-    return out
+def centred(points: Sequence[Point], p1: Point, p2: Point) -> tuple[Point, Point]:
+    """
+    The same line moved (keeping its angle) to the middle of a panel: halfway
+    between the panel's two extremes measured across the line, like Maya's
+    edge-loop centre snap.
+    """
+    dx, dy = p2[0] - p1[0], p2[1] - p1[1]
+    length = math.hypot(dx, dy) or 1.0
+    nx, ny = -dy / length, dx / length
+    proj = [x * nx + y * ny for x, y in points]
+    shift = (min(proj) + max(proj)) / 2 - (p1[0] * nx + p1[1] * ny)
+    return (p1[0] + nx * shift, p1[1] + ny * shift), (p2[0] + nx * shift, p2[1] + ny * shift)
 
 
 def crossing(points: Sequence[Point], p1: Point, p2: Point) -> Optional[tuple[Point, Point]]:
@@ -229,17 +265,69 @@ def crossing(points: Sequence[Point], p1: Point, p2: Point) -> Optional[tuple[Po
     return (hits[0], hits[-1]) if len(hits) >= 2 else None
 
 
-def merge(layout: dict, path: Path) -> dict:
-    """Undo the cut at ``path``, and every cut made inside its two halves."""
+def cut_segments(layout: dict) -> list[tuple[Where, Point, Point]]:
+    """Each cut as the segment you see on the page: (where, start, end), page coordinates."""
+    out = []
+
+    def walk(node, points, flags, path, inset, rect):
+        if not node.get("cut"):
+            return
+        x1, y1, x2, y2 = node["cut"]
+        span = crossing(points, (x1, y1), (x2, y2))
+        if span:
+            a, b = span
+            out.append(((inset, path), _to_page(rect, a) if rect else a, _to_page(rect, b) if rect else b))
+        for key, keep in (("a", 1), ("b", -1)):
+            pts, fl = _clip(points, flags, (x1, y1), (x2, y2), keep)
+            if len(pts) >= 3:
+                walk(node.get(key, {}), pts, fl, path + (key,), inset, rect)
+
+    walk(layout.get("tree", {}), list(SQUARE), [False] * 4, (), -1, None)
+    for i, ins in enumerate(insets(layout)):
+        walk(ins["tree"], list(SQUARE), [False] * 4, (), i, ins["rect"])
+    return out
+
+
+def merge(layout: dict, where: Where) -> dict:
+    """Undo the cut at ``where``, and every cut made inside its two halves."""
     new = _copy(layout)
-    node = _node(new["tree"], path)
-    node.clear()
+    _node(_tree(new, where[0]), where[1]).clear()
+    return new
+
+
+def slide(layout: dict, where: Where, dx: float, dy: float) -> dict:
+    """
+    Move a cut sideways (parallel to itself) by the part of (dx, dy), in page
+    coordinates, that's square to it. Refused when it would lose a panel.
+    """
+    new = _copy(layout)
+    node = _node(_tree(new, where[0]), where[1])
+    x1, y1, x2, y2 = node["cut"]
+    if where[0] >= 0:  # into the inset's own coordinates
+        _x, _y, w, h = new["insets"][where[0]]["rect"]
+        dx, dy = dx / w, dy / h
+    ux, uy = x2 - x1, y2 - y1
+    length = math.hypot(ux, uy)
+    nx, ny = -uy / length, ux / length
+    d = dx * nx + dy * ny
+    node["cut"] = [round(v, 6) for v in (x1 + nx * d, y1 + ny * d, x2 + nx * d, y2 + ny * d)]
+    if len(shapes(new)) != len(shapes(layout)) or any(abs(_area(s.points)) < 1e-4 for s in shapes(new)):
+        raise ValueError("that would squeeze a panel out")
     return new
 
 
 def add_inset(layout: dict, x: float, y: float, w: float, h: float) -> dict:
     new = _copy(layout)
-    new.setdefault("insets", []).append([round(v, 6) for v in (x, y, w, h)])
+    new["insets"].append({"rect": [round(v, 6) for v in (x, y, w, h)], "tree": {}})
+    return new
+
+
+def set_inset_rect(layout: dict, index: int, x: float, y: float, w: float, h: float) -> dict:
+    """Move or resize an inset; its own cuts come along, since they're stored relative to it."""
+    if w <= 0 or h <= 0:
+        raise ValueError("an inset needs a size")
+    new = _copy(layout)
+    new["insets"][index]["rect"] = [round(v, 6) for v in (x, y, w, h)]
     return new
 
 
@@ -247,6 +335,12 @@ def remove_inset(layout: dict, index: int) -> dict:
     new = _copy(layout)
     del new["insets"][index]
     return new
+
+
+def inset_rects_mm(layout: dict, live: Rect) -> list[Rect]:
+    """Each inset's outline in canvas mm (for the gap drawn behind it)."""
+    return [Rect(live.x + x * live.w, live.y + y * live.h, w * live.w, h * live.h)
+            for x, y, w, h in (i["rect"] for i in insets(layout))]
 
 
 # ---------- from rectangles ----------
@@ -284,7 +378,7 @@ def from_cells(cells: Sequence[Cell]) -> Optional[dict]:
     if not cells:
         return None
     tree = split(list(cells), Cell(0.0, 0.0, 1.0, 1.0))
-    return None if tree is None else {"kind": "manual", "tree": tree, "insets": []}
+    return None if tree is None else {"kind": "manual", "tree": tree, "insets": [], "inset_gap": True}
 
 
 # ---------- to millimetres ----------
@@ -323,7 +417,11 @@ def _inset_polygon(points: Sequence[Point], offsets: Sequence[float]) -> list[Po
 class MmPanel:
     cell: Cell                    # gutter-free bounding box, 0..1 (what cpb:cell stores)
     points: tuple[Point, ...]     # final outline in canvas mm, gutter applied
-    on_top: bool                  # insets: drawn above the others, with a halo
+    inset: int                    # which inset it belongs to, or -1
+
+    @property
+    def on_top(self) -> bool:
+        return self.inset >= 0
 
 
 def to_mm(layout: dict, live: Rect, gutter: float, reading: str = "ltr") -> list[MmPanel]:
@@ -331,19 +429,16 @@ def to_mm(layout: dict, live: Rect, gutter: float, reading: str = "ltr") -> list
     out = []
     for s in shapes(layout):
         pts = [(live.x + x * live.w, live.y + y * live.h) for x, y in s.points]
-        if s.inset >= 0:
-            offsets = [0.0] * len(pts)  # an inset is drawn where you put it; its halo makes the gap
-        else:
-            offsets = [gutter / 2 if f else 0.0 for f in s.cut_edges]
-        mm = _inset_polygon(pts, offsets)
+        # Edges made by a cut move in by half the gutter; outer edges (the
+        # live area's, or an inset's own border) stay where they are.
+        mm = _inset_polygon(pts, [gutter / 2 if f else 0.0 for f in s.cut_edges])
         # Clockwise on screen (y down), starting top-left, so files read the same every save.
         if _area(mm) < 0:
             mm = mm[::-1]
         start = min(range(len(mm)), key=lambda i: (round(mm[i][1], 6), mm[i][0]))
         mm = mm[start:] + mm[:start]
-        out.append(MmPanel(s.bbox, tuple((round(x, 4), round(y, 4)) for x, y in mm), s.inset >= 0))
+        out.append(MmPanel(s.bbox, tuple((round(x, 4), round(y, 4)) for x, y in mm), s.inset))
     order = reading_order([p.cell for p in out], reading)
-    # reading_order sorts cells; map each back to its panel (cells can repeat only for identical shapes).
     remaining = list(out)
     ordered = []
     for c in order:

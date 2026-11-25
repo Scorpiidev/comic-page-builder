@@ -161,13 +161,20 @@ def apply_page(root: ET.Element, page: Page) -> None:
     pg.set(q(CPB, "radius"), num(st.corner_radius))
     pg.set(q(CPB, "layout"), json.dumps(page.layout, sort_keys=True, separators=(",", ":")))
     _clear_owned(pg)
-    # Inset panels go last, so they're painted over the panels they overlap.
+    # Inset panels go last, inset by inset, so each is painted over what it overlaps.
+    gaps = {}
+    if page.layout.get("kind") == "manual" and page.layout.get("inset_gap", True):
+        from ..layouts.knife import inset_rects_mm
+        gaps = dict(enumerate(inset_rects_mm(page.layout, page.geometry().live)))
     pos = 0
-    for p in sorted(panels, key=lambda p: p.on_top):
+    drawn_gap = set()
+    for p in sorted(panels, key=lambda p: p.inset):
         c = p.cell
-        if p.on_top:
-            # A paper-coloured halo one gutter wide, so the inset reads as in front.
-            _child(pg, "path", {"id": f"cpb-halo-{p.index}", "d": panel_d(page, p), "fill": "#ffffff",
+        if p.inset in gaps and p.inset not in drawn_gap:
+            # A paper-coloured gap one gutter wide around the whole inset, so
+            # the lines behind it stop short and it reads as in front.
+            drawn_gap.add(p.inset)
+            _child(pg, "path", {"id": f"cpb-inset-gap-{p.inset + 1}", "d": rect_path(gaps[p.inset]), "fill": "#ffffff",
                                 "stroke": "#ffffff", "stroke-width": num(2 * page.gutter),
                                 "stroke-linejoin": "miter"}, index=pos)
             pos += 1
@@ -187,7 +194,7 @@ def apply_page(root: ET.Element, page: Page) -> None:
         if p.points:
             attrs[q(CPB, "points")] = " ".join(f"{num(x)},{num(y)}" for x, y in p.points)
         if p.on_top:
-            attrs[q(CPB, "inset")] = "true"
+            attrs[q(CPB, "inset")] = str(p.inset + 1)
         _child(pg, "path", attrs, index=pos)
         pos += 1
 

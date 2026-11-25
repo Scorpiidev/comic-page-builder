@@ -43,7 +43,11 @@ class Panel:
     # Manual layouts (layouts/knife.py): the real outline in canvas mm, for
     # panels cut at an angle. None means the panel is just ``rect``.
     points: Optional[tuple] = None
-    on_top: bool = False  # an inset panel, drawn over the others
+    inset: int = -1  # the inset it belongs to (drawn over the others), or -1
+
+    @property
+    def on_top(self) -> bool:
+        return self.inset >= 0
 
 
 @dataclass
@@ -106,7 +110,7 @@ class Page:
             for i, mp in enumerate(to_mm(self.layout, self.geometry().live, self.gutter, self.reading), start=1):
                 xs, ys = [p[0] for p in mp.points], [p[1] for p in mp.points]
                 rect = Rect(min(xs), min(ys), max(xs) - min(xs), max(ys) - min(ys))
-                out.append(Panel(i, mp.cell, rect, mp.points, mp.on_top))
+                out.append(Panel(i, mp.cell, rect, mp.points, mp.inset))
             return out
         rects = apply_gutter(self.cells, self.geometry().live, self.gutter)
         return [Panel(i, c, r) for i, (c, r) in enumerate(zip(self.cells, rects), start=1)]

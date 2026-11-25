@@ -136,8 +136,12 @@ Photoshop, Illustrator and Krita. The plan and every decision live in
     (2026-11-25), not merged:** `core/cpb_core/layouts/knife.py` (split tree
     with cuts at any angle, convex polygons, per-edge gutters, insets with a
     paper halo, presets/random layouts convert to a cut tree) and the Page
-    builder's Knife / Inset panel / Merge tools with undo
-    (`hub/comic_hub/layout_canvas.py`). Blank pages and Add page now
+    builder's Select / Knife / Inset panel / Merge tools with undo
+    (`hub/comic_hub/layout_canvas.py`). Round 2 (Ivón's feedback): Shift
+    centres a cut in its panel (like Maya's edge-loop centre; Ctrl is now
+    15° steps), gutters slide by dragging, insets have their own cut tree
+    (in inset coordinates, so cuts move with them), Select moves/resizes
+    insets with 8 handles, "Gap around insets" is a per-layout toggle. Blank pages and Add page now
     default to a blank hand-cut page; Layout options opens on Presets.
     **Known gap:** the Photoshop importer still builds rectangle frames
     from `cpb:rect`, so slanted panels come in as their bounding boxes;

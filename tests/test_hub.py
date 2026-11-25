@@ -183,6 +183,8 @@ def test_cut_merge_and_inset_by_hand(window, app):
     b = window.builder
     assert b.draft.layout["kind"] == "manual" and len(b.draft.panels()) == 1  # the wizard's blank pages are blank
     c = b.preview
+    assert c.tool == "select"
+    b.set_tool("knife")
     live = b.draft.geometry().live
     mid_y = live.y + live.h / 2
     # A nearly level drag snaps to straight across.
@@ -209,6 +211,45 @@ def test_cut_merge_and_inset_by_hand(window, app):
     assert len(read_page(window.project.page_path(1)).page.panels()) == 2
 
 
+def test_slide_gutters_and_edit_insets_with_select(window, app):
+    from PySide6.QtCore import QEvent, Qt
+    from PySide6.QtGui import QKeyEvent
+    window.selected = 3
+    window.go("builder")
+    b = window.builder
+    c = b.preview
+    live = b.draft.geometry().live
+    b.set_tool("knife")
+    # Shift puts the cut through the middle, wherever you drag it.
+    _drag(c, (live.x + 5, live.y + 20), (live.right - 5, live.y + 21), Qt.ShiftModifier)
+    top, bottom = b.draft.panels()
+    assert top.rect.h == pytest.approx(bottom.rect.h, abs=0.01)
+    undo_depth = len(b.undo_stack)
+    # Slide the gutter down 20 mm: one drag, one undo step.
+    b.set_tool("select")
+    y = live.y + live.h / 2
+    _drag(c, (live.x + 40, y), (live.x + 40, y + 20))
+    top2, bottom2 = b.draft.panels()
+    assert top2.rect.h == pytest.approx(top.rect.h + 20, abs=0.05) and len(b.undo_stack) == undo_depth + 1
+    # Draw an inset, cut it, move it, resize it, delete it.
+    b.set_tool("inset")
+    _drag(c, (live.x + 20, live.y + 20), (live.x + 80, live.y + 60))
+    b.set_tool("knife")
+    _drag(c, (live.x + 50, live.y + 15), (live.x + 50, live.y + 65), Qt.AltModifier)
+    insets = [p for p in b.draft.panels() if p.on_top]
+    assert len(insets) == 2
+    b.set_tool("select")
+    _drag(c, (live.x + 30, live.y + 40), (live.x + 40, live.y + 50))
+    moved = [p for p in b.draft.panels() if p.on_top]
+    assert moved[0].rect.x == pytest.approx(insets[0].rect.x + 10, abs=0.05) and len(moved) == 2
+    _drag(c, (live.x + 90, live.y + 70), (live.x + 110, live.y + 70))   # the right-middle handle
+    wider = [p for p in b.draft.panels() if p.on_top]
+    assert max(p.rect.right for p in wider) == pytest.approx(live.x + 110, abs=0.05)
+    c.keyPressEvent(QKeyEvent(QEvent.KeyPress, Qt.Key_Delete, Qt.NoModifier))
+    assert not any(p.on_top for p in b.draft.panels())
+    b.saved = b.draft
+
+
 def test_presets_can_be_cut_further(window, app):
     window.selected = 2
     window.go("builder")
@@ -219,6 +260,7 @@ def test_presets_can_be_cut_further(window, app):
     dlg._preset_clicked(dlg.presets.item(0))
     n = len(b.draft.panels())
     p = b.draft.panels()[0].rect
+    b.set_tool("knife")
     _drag(b.preview, (p.x + 5, p.y + p.h / 2), (p.right - 5, p.y + p.h / 2 + 8))
     assert b.draft.layout["kind"] == "manual" and len(b.draft.panels()) == n + 1
 

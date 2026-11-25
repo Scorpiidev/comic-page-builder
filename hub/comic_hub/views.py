@@ -8,7 +8,7 @@ from dataclasses import replace
 from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtGui import QColor, QIcon, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
-    QAbstractItemView, QButtonGroup, QComboBox, QFormLayout, QFrame, QGroupBox, QHBoxLayout, QHeaderView,
+    QAbstractItemView, QButtonGroup, QCheckBox, QComboBox, QFormLayout, QFrame, QGroupBox, QHBoxLayout, QHeaderView,
     QLabel, QListView, QListWidget, QListWidgetItem, QPushButton, QRadioButton, QScrollArea, QSpinBox,
     QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
@@ -332,7 +332,8 @@ class BuilderView(QWidget):
         tl = QHBoxLayout(tools); tl.setContentsMargins(10, 4, 10, 4); tl.setSpacing(4)
         self.tool_buttons = {}
         group = QButtonGroup(self)
-        for key, label, tip in (("knife", "Knife", "Drag across a panel to cut it. Snaps to straight and 45°; Shift: 15° steps; Alt: free."),
+        for key, label, tip in (("select", "Select", "Drag a gutter to slide it; click an inset to move or resize it. Delete removes."),
+                                ("knife", "Knife", "Drag across a panel to cut it. Shift: through the middle; Ctrl: 15° steps; Alt: free."),
                                 ("inset", "Inset panel", "Drag a rectangle: a panel on top of the others."),
                                 ("merge", "Merge", "Click a gutter to join the panels on both sides, or an inset to remove it.")):
             b = QPushButton(label); b.setCheckable(True); b.setToolTip(tip); b.setProperty("tool", key)
@@ -343,6 +344,12 @@ class BuilderView(QWidget):
         self.undo_btn = QPushButton("Undo"); self.redo_btn = QPushButton("Redo")
         for b in (self.blank_btn, self.undo_btn, self.redo_btn):
             tl.addWidget(b)
+        tl.addSpacing(12)
+        self.gap_box = QCheckBox("Gap around insets")
+        self.gap_box.setToolTip("A white gap one gutter wide around inset panels, so the lines behind them stop short.")
+        self.gap_box.setChecked(True)
+        self.gap_box.toggled.connect(self._gap_toggled)
+        tl.addWidget(self.gap_box)
         tl.addStretch()
         sl.addWidget(tools)
         self.tool_hint = QLabel(); self.tool_hint.setObjectName("Hint"); self.tool_hint.setContentsMargins(12, 4, 12, 2)
@@ -351,6 +358,8 @@ class BuilderView(QWidget):
         sl.addWidget(self.preview, 1)
         lay.addWidget(stage, 1)
         self.preview.layout_edited.connect(self._layout_edited)
+        self.preview.layout_preview.connect(self._layout_preview)
+        self._drag_base: Page | None = None
         self.preview.message.connect(self.tool_hint.setText)
         self.blank_btn.clicked.connect(self.blank_layout)
         self.undo_btn.clicked.connect(self.undo); self.redo_btn.clicked.connect(self.redo)
@@ -358,7 +367,7 @@ class BuilderView(QWidget):
         QShortcut(QKeySequence.Redo, self, self.redo)
         self.undo_stack: list[Page] = []
         self.redo_stack: list[Page] = []
-        self.set_tool("knife")
+        self.set_tool("select")
 
         size = QGroupBox("Page size"); sf = QFormLayout(size)
         self.paper = QComboBox()
@@ -435,7 +444,8 @@ class BuilderView(QWidget):
 
     # ---------- hand tools (prototype) ----------
     TOOL_HINTS = {
-        "knife": "Knife: drag across a panel to cut it. Snaps to straight and 45° (Shift: 15° steps, Alt: free).",
+        "select": "Select: drag a gutter to slide it. Click an inset to move it or resize it by its handles. Delete removes.",
+        "knife": "Knife: drag across a panel to cut it. Shift: through the middle · Ctrl: 15° steps · Alt: no snapping. Drag a gutter to slide it.",
         "inset": "Inset panel: drag a rectangle to put a panel on top of the others.",
         "merge": "Merge: click a gutter to join the panels on both sides, or click an inset to remove it.",
     }
@@ -446,15 +456,37 @@ class BuilderView(QWidget):
         self.tool_hint.setText(self.TOOL_HINTS[tool])
         self.preview.update()
 
-    def _layout_edited(self, layout: dict) -> None:
+    def _page_for(self, layout: dict) -> Page:
         d = self.draft
+        new = page_manual(d.number, d.size, layout, gutter=d.gutter, reading=d.reading, style=d.style)
+        new = replace(new, balloons=d.balloons, art=d.art)
+        new.panels()  # refuses a layout whose panels the gutter would swallow
+        return new
+
+    def _layout_preview(self, layout: dict) -> None:
+        """A drag in progress: show it, but only the finished drag becomes an undo step."""
         try:
-            new = page_manual(d.number, d.size, layout, gutter=d.gutter, reading=d.reading, style=d.style)
-            new = replace(new, balloons=d.balloons, art=d.art)
-            new.panels()  # refuses a cut whose panels the gutter would swallow
+            new = self._page_for(layout)
+        except ValueError:
+            return
+        if self._drag_base is None:
+            self._drag_base = self.draft
+        self.set_draft(new)
+
+    def _gap_toggled(self, on: bool) -> None:
+        if self.draft and self.draft.layout.get("kind") == "manual" and self.draft.layout.get("inset_gap", True) != on:
+            self._layout_edited(dict(self.draft.layout, inset_gap=on))
+
+    def _layout_edited(self, layout: dict) -> None:
+        base, self._drag_base = self._drag_base, None
+        try:
+            new = self._page_for(layout)
         except ValueError as e:
             self.tool_hint.setText(f"No change: {e}.")
+            if base is not None:
+                self.set_draft(base)
             return
+        d = base or self.draft
         self.undo_stack.append(d)
         self.redo_stack.clear()
         self.set_draft(new)
@@ -546,6 +578,10 @@ class BuilderView(QWidget):
         how = {"bsp": f"Random layout, seed {r.get('seed')} ({r.get('mode')})", "preset": f"Preset {r.get('name')}",
                "grid": "Grid", "manual": "Hand-cut layout"}.get(r.get("kind"), "Custom cells")
         self.undo_btn.setEnabled(bool(self.undo_stack)); self.redo_btn.setEnabled(bool(self.redo_stack))
+        self.gap_box.blockSignals(True)
+        self.gap_box.setChecked(r.get("inset_gap", True))
+        self.gap_box.setEnabled(r.get("kind") == "manual" and bool(r.get("insets")))
+        self.gap_box.blockSignals(False)
         asked = r.get("panels")
         note = f" Asked for {asked}; only {len(p.cells)} fit." if asked and asked > len(p.cells) else ""
         self.layout_info.setText(f"{how} · {len(p.cells)} panels · {'right to left' if p.reading == 'rtl' else 'left to right'}.{note}")
