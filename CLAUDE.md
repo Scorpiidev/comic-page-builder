@@ -102,8 +102,10 @@ Photoshop, Illustrator and Krita. The plan and every decision live in
   - `Page.balloons = None` means "leave the Letters layer alone", so the
     page builder's saves never wipe lettering.
   - **Watch out:** Qt's `QSvgRenderer` (SVG Tiny 1.2) ignores tspan x/y and
-    draws no balloon text. The hub has to paint balloons itself; Edge
-    renders page.svg correctly.
+    runs a balloon's lines together. Previews flatten each tspan into its own
+    `<text>` in memory first (the file keeps tspans for Illustrator). Also,
+    `QT_QPA_PLATFORM=offscreen` on Windows has no fonts (text draws as
+    boxes), so check text rendering with the normal platform.
   - Next: the hub's Balloons screen, image/PDF page import (D7), letters in
     the PS and AI importers, then test in the real apps (open question 2 in
     DESIGN.md §15).
