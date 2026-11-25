@@ -9,7 +9,7 @@ Layer stack, bottom to top (SVG paints later elements on top)::
     <defs>        cpb-clip-N   one clip path per panel, for the importers
     cpb-paper     white canvas, so the file previews correctly anywhere
     cpb-panels    one <path> per panel, in reading order
-    cpb-letters   balloons and text (filled in by M5; never cleared here)
+    cpb-letters   balloons and text (svg/letters.py); only touched when the page has balloons
     cpb-guides    trim, safe area and crop marks; cpb:print="false"
 """
 
@@ -158,7 +158,10 @@ def apply_page(root: ET.Element, page: Page) -> None:
             "stroke-linejoin": "miter",
         }, index=i)
 
-    _layer(root, "cpb-letters", "Letters")  # owned by the balloon editor (M5)
+    letters = _layer(root, "cpb-letters", "Letters")
+    if page.balloons is not None:
+        from .letters import apply_balloons  # here, not at the top: letters imports balloons, which is heavier
+        apply_balloons(letters, page.balloons)
 
     guides = _layer(root, "cpb-guides", "Guides")
     guides.set(q(CPB, "print"), "false")
@@ -188,6 +191,16 @@ def crop_marks(trim: Rect, bleed: float, gap: float = 1.0) -> str:
 
 def serialize(root: ET.Element) -> str:
     ET.indent(root, space="  ")
+    # Indenting puts line breaks between a balloon's tspans, and SVG turns
+    # those into spaces: a stray space at the end of each line would shift
+    # centred text and come into Illustrator as real characters.
+    for el in root.iter(q(SVG, "text")):
+        if is_owned(el):
+            if el.text is not None and not el.text.strip():
+                el.text = None
+            for span in el:
+                if span.tail is not None and not span.tail.strip():
+                    span.tail = None
     return '<?xml version="1.0" encoding="UTF-8"?>\n' + ET.tostring(root, encoding="unicode") + "\n"
 
 

@@ -53,6 +53,10 @@ class Page:
     # How the cells were made, so the hub can re-flow a locked layout.
     # e.g. {"kind": "bsp", "panels": 6, "mode": "auto", "seed": 48213, "snap": True}
     layout: dict = field(default_factory=dict)
+    # The Letters layer's balloons (balloons.Balloon). None means "leave the
+    # page's balloons as they are", so the page builder, which knows nothing
+    # about balloons, can save a page without wiping its lettering.
+    balloons: Optional[tuple] = None
 
     def __post_init__(self) -> None:
         if self.number < 1:
@@ -66,6 +70,11 @@ class Page:
         q = lambda v: round(v, CELL_DECIMALS)
         self.cells = tuple(reading_order((Cell(q(c.x), q(c.y), q(c.w), q(c.h)) for c in self.cells),
                                          self.reading))
+        if self.balloons is not None:
+            self.balloons = tuple(self.balloons)
+            numbers = [b.number for b in self.balloons]
+            if len(set(numbers)) != len(numbers):
+                raise ValueError("two balloons on the page share a number")
 
     @property
     def file_name(self) -> str:

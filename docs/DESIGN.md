@@ -84,7 +84,7 @@ core/cpb_core/
     model.py         Page, Panel, PanelStyle                                  (M1, done)
     project.py       project folder + project.json, pages/NNN/page_NN.svg, batches (M3, done)
     lettering/       font discovery, metrics, size advisor
-    balloons/        balloon outline generation, text fitting
+    balloons/        Balloon + Tail model, outlines (one path), text fitting   (M5, core done)
     svg/             writer.py, reader.py (round trip)
     project.py       folder scaffold, manifest read and write
 hub/comic_hub/       PySide6 app: theme.py (pink Aero QSS), views, dialogs       (M3, done)
@@ -586,7 +586,7 @@ The earlier rounded "cute" token set is kept below for reference only.
 | M2 ✅ | Risk spike: Photoshop and Illustrator importers, test opening the PSD in CSP | one page imports into PS and AI; CSP result written down (done 2026-11-18: see `importers/M2_RESULTS.md`; plus `python -m cpb_core borders` for CSP vector borders; 79 tests) |
 | M3 ✅ | Hub app shell in pink Aero: projects (wizard + settings), pages (add + batch), page builder | build a page from the UI (done 2026-11-18: `hub/`, `core/cpb_core/project.py`; 101 tests incl. headless hub tests) |
 | M4 🟡 | Lettering advisor + calibration sheet | test print done, presets saved (built 2026-11-19: `core/cpb_core/lettering/`, the hub's Lettering screen and calibration PDF; 131 tests. Waiting on the real test print) |
-| M5 | Balloons with separate body/tail editing, on generated and imported pages | five kinds, text fitting, editable again later, image/PDF import |
+| M5 🚧 | Balloons with separate body/tail editing, on generated and imported pages | five kinds, text fitting, editable again later, image/PDF import |
 | M6 | Krita importer port | parity with 0.13 |
 | M7 | Pages board statuses, script link | a whole chapter runs through the hub |
 

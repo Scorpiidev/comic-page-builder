@@ -90,6 +90,24 @@ Photoshop, Illustrator and Krita. The plan and every decision live in
 
   Then mark M4 ✅ in `docs/DESIGN.md` §14 and here.
 
+- **M5 started 2026-11-25** in the local session, core first:
+  - `core/cpb_core/balloons/`: `Balloon` and `Tail` as parameters (D6),
+    outlines for all five kinds as one path (M/L/C/Z only, no arcs, so the
+    Photoshop importer can map them), and text fitting with a pluggable
+    `measure` (the hub should pass Qt's real widths; the core's
+    `approx_measure` is a rough guess).
+  - `core/cpb_core/svg/letters.py` writes and reads the Letters layer:
+    one `cpb-balloon-N` group per balloon, parameters on the group, text
+    pre-broken into positioned tspans.
+  - `Page.balloons = None` means "leave the Letters layer alone", so the
+    page builder's saves never wipe lettering.
+  - **Watch out:** Qt's `QSvgRenderer` (SVG Tiny 1.2) ignores tspan x/y and
+    draws no balloon text. The hub has to paint balloons itself; Edge
+    renders page.svg correctly.
+  - Next: the hub's Balloons screen, image/PDF page import (D7), letters in
+    the PS and AI importers, then test in the real apps (open question 2 in
+    DESIGN.md §15).
+
 The previous work was done in a cloud session that can't reach this PC's
 apps. That's why you're here.
 
@@ -129,7 +147,7 @@ what changed in `M2_RESULTS.md`.
   with `cpb-`. Never delete anything else.
 - **Importers never compute geometry.** Each panel carries its final rect
   in `cpb:rect`.
-- Run `python -m pytest` before every commit (131 tests at last count; the hub tests need PySide6).
+- Run `python -m pytest` before every commit (157 tests at last count; the hub tests need PySide6).
   Golden files regenerate only on purpose: `CPB_UPDATE_GOLDEN=1`.
 - Don't touch `comicpagebuilder/` (the 0.13 plugin) until M6.
 - Commit messages explain the why. Ivón is learning Python, so code comments

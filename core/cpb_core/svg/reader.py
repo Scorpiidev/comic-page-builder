@@ -21,6 +21,7 @@ from ..geometry import PageSize
 from ..layouts.cells import Cell
 from ..model import Page, PanelStyle
 from .ns import BORDERS_FORMAT, CPB, FORMAT, FORMAT_VERSION, KNOWN_PREFIXES, SVG, is_owned, q
+from .letters import read_balloons
 from .writer import LAYERS, apply_page, panel_path, serialize
 
 _NS_N = re.compile(r"^ns\d+$")
@@ -34,6 +35,8 @@ class PageDocument:
     # Panels whose shape was changed outside the hub. Saving from the hub
     # redraws them from the layout, so the UI should ask before it does.
     modified_panels: list[int] = field(default_factory=list)
+    # Balloons whose words were changed in another app (their text wins).
+    edited_balloons: list[int] = field(default_factory=list)
 
     def foreign_elements(self) -> list[ET.Element]:
         """
@@ -163,11 +166,15 @@ def parse_page(text: Union[str, bytes]) -> PageDocument:
     except json.JSONDecodeError:
         raise ValueError("the Panels layer has a damaged cpb:layout value") from None
 
+    balloons, edited = read_balloons(_find(root, "cpb-letters"))
     page = Page(number=number, size=size, cells=tuple(cells), gutter=_float(group, "gutter", 3.0),
-                reading=group.get(q(CPB, "reading"), "ltr"), style=style, layout=layout)
+                reading=group.get(q(CPB, "reading"), "ltr"), style=style, layout=layout,
+                # No balloons reads as None ("nothing to change"), so a page
+                # read back equals the page that was written.
+                balloons=balloons or None)
 
     # A panel counts as edited elsewhere when its path no longer matches what the hub would draw.
     expected = {p.index: panel_path(page, p.rect) for p in page.panels()}
     modified = [int(el.get(q(CPB, "index"))) for el in paths
                 if el.get("d") != expected.get(int(el.get(q(CPB, "index"), "0")))]
-    return PageDocument(page=page, root=root, modified_panels=modified)
+    return PageDocument(page=page, root=root, modified_panels=modified, edited_balloons=edited)
