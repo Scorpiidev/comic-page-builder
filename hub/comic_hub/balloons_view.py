@@ -97,6 +97,14 @@ def qpath(d: str) -> QPainterPath:
     return path
 
 
+def default_font_for(project: Project | None, role: str, ui_family: str) -> BalloonFont:
+    """The role's Lettering preset, or a readable stand-in (the UI font) until there is one."""
+    font = project.balloon_font(role) if project else None
+    if font is not None:
+        return font
+    return BalloonFont(family=ui_family, size_pt=recommend_pt(0.7, role if role in ("dialogue", "caption", "whisper") else "dialogue"))
+
+
 def fitted(b: Balloon) -> Balloon:
     return fit_balloon(b, qt_measure(b.font))
 
@@ -540,11 +548,8 @@ class BalloonsView(QWidget):
 
     def default_font(self, role: str) -> BalloonFont:
         """The role's Lettering preset, or a readable stand-in until there is one."""
-        font = self.project.balloon_font(role) if self.project else None
-        if font is not None:
-            return font
-        family = self.font().family()  # the UI font: always installed, plainly a placeholder
-        return BalloonFont(family=family, size_pt=recommend_pt(0.7, role if role in ("dialogue", "caption", "whisper") else "dialogue"))
+        # The UI font as the stand-in: always installed, and plainly a placeholder.
+        return default_font_for(self.project, role, self.font().family())
 
     def add(self, kind: str = "speech", at: QPointF | None = None) -> Balloon:
         """A new balloon in the middle of the selected panel's top half (or the page), tail pointing down."""

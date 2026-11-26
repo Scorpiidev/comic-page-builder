@@ -1,5 +1,5 @@
 """
-PDF pages as images, for importing drawn pages (D7).
+PDF pages as images, for importing drawn pages (D7), and PDF scripts as text (M7).
 
 Uses pypdfium2 (Apache-2.0 / BSD-3-Clause): Chrome's PDF engine, packaged
 small. It's imported only when you actually import a PDF, so the hub starts
@@ -49,5 +49,21 @@ def render_page(path: str, index: int, dpi: int, out_png: str) -> None:
         if not img.save(out_png, "PNG"):
             raise OSError(f"couldn't write {out_png}")
         page.close()
+    finally:
+        pdf.close()
+
+
+def pdf_text(path: str) -> str:
+    """All the text of a PDF, page after page (for reading a comic script)."""
+    import pypdfium2 as pdfium
+    pdf = pdfium.PdfDocument(path)
+    try:
+        parts = []
+        for i in range(len(pdf)):
+            page = pdf[i]
+            text = page.get_textpage()
+            parts.append(text.get_text_range())
+            text.close(); page.close()
+        return "\n".join(parts)
     finally:
         pdf.close()

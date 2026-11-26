@@ -591,7 +591,7 @@ The earlier rounded "cute" token set is kept below for reference only.
 | M4 🟡 | Lettering advisor + calibration sheet | test print done, presets saved (built 2026-11-19: `core/cpb_core/lettering/`, the hub's Lettering screen and calibration PDF; 131 tests. Waiting on the real test print) |
 | M5 🚧 | Balloons with separate body/tail editing, on generated and imported pages | five kinds, text fitting, editable again later, image/PDF import |
 | M6 | Krita importer port | parity with 0.13 |
-| M7 | Pages board statuses, script link | a whole chapter runs through the hub |
+| M7 | Pages board statuses, script link (started 2026-11-26: `cpb_core/script/` reads scripts in the usual layouts and makes each page's balloons; hub Script screen with a "Who's talking?" checklist) | a whole chapter runs through the hub |
 
 The 0.13 Krita plugin in `comicpagebuilder/` keeps working until M6 ports it
 onto the core; `core/` sits beside it and doesn't touch it.

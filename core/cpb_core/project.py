@@ -80,6 +80,9 @@ class Project:
     modified: str = field(default_factory=_now)
     # Text role -> chosen font and size, e.g. {"dialogue": LetteringPreset(...)}.
     lettering: dict = field(default_factory=dict)
+    # The linked comic script (M7): {"file": "script/name.txt", "first_page": 1,
+    # "not_speakers": [...]}; the labels you unticked are kept so you're not asked again.
+    script: dict = field(default_factory=dict)
 
     # ---------- pages ----------
     def page_path(self, number: int) -> str:
@@ -242,6 +245,7 @@ class Project:
                             "fill": self.style.fill, "corner_radius": self.style.corner_radius},
             "gutter": self.gutter,
             "lettering": {role: preset.to_json() for role, preset in sorted(self.lettering.items())},
+            **({"script": self.script} if self.script else {}),
             "folders": list(self.folders),
             "modified": self.modified,
             "pages": [{"number": e.number, "file": e.file, "status": e.status, "modified": e.modified}
@@ -320,6 +324,7 @@ def load_project(folder: str) -> Project:
             gutter=data.get("gutter", 3.0), folders=tuple(data.get("folders", FOLDERS)),
             modified=data.get("modified", _now()),
             lettering={role: LetteringPreset.from_json(v) for role, v in data.get("lettering", {}).items()},
+            script=dict(data.get("script") or {}),
             pages=sorted((PageEntry(p["number"], p.get("status", "thumbs"), p.get("modified", _now()))
                           for p in data.get("pages", [])), key=lambda e: e.number),
         )

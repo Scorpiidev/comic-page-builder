@@ -168,10 +168,25 @@ Photoshop, Illustrator and Krita. The plan and every decision live in
     `tail_base_point`, also used for the rim handle); thought trails get 2–8
     bubbles by length; the Add balloon split button's arrow no longer turns
     black.
-  - Ideas from Ivón to plan, not built: balloons pre-filled from her comic
-    script (fits M7's script link), and lettering drawn pages in the hub
-    (already possible via D7; she may not have known).
-  - Next: M4's test print and M6 (Krita), or M7 if the script idea goes first.
+  - **Script to balloons (M7, started 2026-11-26, Ivón's idea):**
+    `core/cpb_core/script/` reads a script (.txt/.md/.docx/.odt; PDFs via
+    pypdfium2 in the hub) in the layouts seen in real scripts: Writing
+    Bubbles' PDFs ("PAGE 1 - PANELS: 3", "CAPTION words"), DragonMaster's
+    Google Docs ("Layer 1-2 Panel 1:", "Name:" then the words below, "No
+    Bubble", "Starburst Bubble") and Ivón's own Markdown ("## PAGE 1: TITLE",
+    "### Panel 1 (...)", "* **SFX (...):** *blubb*"). Every "Label:" is a
+    *candidate* speaker: stage notes look the same ("Background: ..."), so
+    the hub's Script screen lists them with a first guess (stage words
+    unticked) and saves her choice in project.json under "script". Make
+    balloons puts each line in its panel in reading order (rtl for manga),
+    tail down, skips pages that already have balloons unless told to add.
+    SFX are listed, not made into balloons. The script is copied into
+    script/ and recopied when the original is newer.
+    Not yet: the M7 pages board / "which pages each scene covers".
+  - Lettering drawn pages in the hub already works (D7); what's missing is
+    exporting a lettered page (art + balloons) without PS/AI.
+  - Next: Ivón tries the Script screen on a real script of hers; then M4's
+    test print and M6 (Krita), or a lettered-page export.
 
 The previous work was done in a cloud session that can't reach this PC's
 apps. That's why you're here.

@@ -17,6 +17,7 @@ from .dialogs import AddPageDialog, BatchDialog, LayoutOptionsDialog, ProjectDia
 from .art_import import ImportArtDialog
 from .balloons_view import KIND_LABELS, BalloonsView
 from .lettering_view import CalibrationDialog, FontLibrary, LetteringView
+from .script_view import ScriptView
 from .views import BuilderView, PagesView, PlaceholderView, ProjectsView
 from .widgets import Toast
 from .winframe import tint_title_bar
@@ -31,7 +32,6 @@ NAV = [  # (group, [(view, label, icon)])
     ("Project", [("settings", "Project settings…", "gear"), ("script", "Script", "folder"), ("exports", "Exports", "send")]),
 ]
 SOON = {
-    "script": ("Script view arrives in M7", "Link your comic script and see which pages each scene covers."),
     "exports": ("Exports", "For now, run the importers in Photoshop and Illustrator (see importers/README.md). Sending from the hub comes later."),
 }
 
@@ -97,8 +97,11 @@ class MainWindow(QMainWindow):
         self.balloons_view = BalloonsView()
         self.balloons_view.dirty_changed.connect(lambda _: self._update_title())
         self.balloons_view.status_changed.connect(self._update_title)
+        self.script_view = ScriptView()
+        self.script_view.status_changed.connect(self._update_title)
+        self.script_view.applied.connect(self._script_applied)
         self.views = {"projects": self.projects_view, "pages": self.pages_view, "builder": self.builder,
-                      "balloons": self.balloons_view, "lettering": self.lettering}
+                      "balloons": self.balloons_view, "lettering": self.lettering, "script": self.script_view}
         for key, (title, text) in SOON.items():
             self.views[key] = PlaceholderView(title, text)
         for w in self.views.values():
@@ -193,7 +196,7 @@ class MainWindow(QMainWindow):
             self.nav.setCurrentItem(it)
 
     def go(self, view: str, record: bool = True) -> None:
-        if view in ("pages", "builder", "balloons", "lettering") and not self.project:
+        if view in ("pages", "builder", "balloons", "lettering", "script") and not self.project:
             view = "projects"
         if view in ("builder", "balloons") and self.selected is None:
             self.toast("No page selected", "Pick a page in Pages first, or add one.")
@@ -234,6 +237,8 @@ class MainWindow(QMainWindow):
                            f"Balloon{'s' if len(n) > 1 else ''} {', '.join(map(str, n))}: the words from the file are kept.")
         elif view == "lettering":
             self.lettering.set_project(self.project)
+        elif view == "script":
+            self.script_view.set_project(self.project)
         self.stack.setCurrentWidget(self.views[view])
         self.back_btn.setEnabled(bool(self.back_stack)); self.fwd_btn.setEnabled(bool(self.fwd_stack))
         self._sync_nav()
@@ -346,6 +351,8 @@ class MainWindow(QMainWindow):
                         ("check", "Save page", self.save_page, True)],
             "balloons": [("balloon", "Add balloon", None, True), ("trash", "Delete balloon", self.delete_balloon, False),
                          None, ("check", "Save letters", self.save_letters, True)],
+            "script": [("open", "Open script…", self.script_view.choose, False), None,
+                       ("balloon", "Make balloons", self.script_view.make, True)],
             "lettering": [("send", "Calibration sheet…", self.calibration, True), None,
                           ("star", "Favourites only", self.favourites_only, False), ("search", "Rescan fonts", self.rescan_fonts, False)],
         }.get(self.view, [])
@@ -409,6 +416,10 @@ class MainWindow(QMainWindow):
             crumbs += [name, "Lettering"]
             status = self.lettering.status_text()
             title = f"Lettering · {name}"
+        elif self.view == "script" and self.project:
+            crumbs += [name, "Script"]
+            status = self.script_view.status_text()
+            title = f"Script · {name}"
         else:
             crumbs += [name, self.view.capitalize()]
             title = f"{self.view.capitalize()} · {name}"
@@ -558,6 +569,15 @@ class MainWindow(QMainWindow):
         self._update_title()
         self.toast("Saved", f"page_{d.number:02d}.svg saved with {len(d.cells)} panels.")
         return True
+
+    # ---------- script ----------
+    def _script_applied(self, report) -> None:
+        if report.balloons:
+            first = report.pages[0]
+            self.selected = first
+            self.toast("Balloons made", f"{report.balloons} on {len(report.pages)} page{'s' if len(report.pages) != 1 else ''}. "
+                                        f"page_{first:02d} is selected: open Balloons to place them.")
+        self._update_title()
 
     # ---------- balloons ----------
     def add_balloon(self, kind: str) -> None:

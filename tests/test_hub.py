@@ -540,3 +540,35 @@ def test_pdf_text_has_the_physical_cap_height(lettering, tmp_path):
     for e in lettering.library.entries[:5]:
         cap = QFontMetricsF(font_for(e.info, 8.0), writer).capHeight() / (1200 / 25.4)
         assert cap == pytest.approx(cap_height_mm(8.0, e.cap_ratio), abs=0.05)
+
+
+# ---------- script (M7) ----------
+def test_script_screen_reads_links_and_makes_balloons(window, app, tmp_path):
+    from PySide6.QtCore import Qt
+    src = tmp_path / "my script.txt"
+    src.write_text("PAGE 1\nPANEL 1\nBackground: rain.\nMARA: Did you see that?\nSFX: BANG\n"
+                   "PAGE 2\nPANEL 1\nCAPTION: Later.\n", encoding="utf-8")
+    window.go("script")
+    v = window.script_view
+    assert window.view == "script" and v.script is None and not v.make_btn.isEnabled()
+    assert v.load_file(str(src))
+    # Copied into the project and linked; the stage note's first guess is "not a speaker".
+    assert os.path.exists(os.path.join(window.project.folder, "script", "my script.txt"))
+    assert window.project.script["not_speakers"] == ["background"]
+    keys = {v.speakers.item(i).data(Qt.UserRole): v.speakers.item(i).checkState() for i in range(v.speakers.count())}
+    assert keys == {"background": Qt.Unchecked, "mara": Qt.Checked, "caption": Qt.Checked}
+    v.make()
+    saved = read_page(window.project.page_path(1)).page.balloons
+    assert [b.text for b in saved] == ["Did you see that?"]
+    assert read_page(window.project.page_path(2)).page.balloons[0].kind == "caption"
+    assert "BANG" in v.result.text() and window.selected == 1
+    # Ticking a label in the list makes its lines balloons next time (here: added to the page).
+    item = next(v.speakers.item(i) for i in range(v.speakers.count()) if v.speakers.item(i).data(Qt.UserRole) == "background")
+    item.setCheckState(Qt.Checked)
+    assert window.project.script["not_speakers"] == []
+    v.existing.setCurrentIndex(1)
+    v.make()
+    assert [b.text for b in read_page(window.project.page_path(1)).page.balloons] == ["Did you see that?", "rain.", "Did you see that?"]
+    # The link survives reopening the screen.
+    window.go("pages"); window.go("script")
+    assert v.script is not None and v.path.endswith("my script.txt")
