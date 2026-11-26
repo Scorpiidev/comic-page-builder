@@ -25,6 +25,9 @@ Inside each frame: **Border N** (shape layer, editable stroke), **Ink**,
 **Color** and **Sketch** (clipped to the mask), and **Mask N** (white panel
 shape).
 
+Drawn pages bring their image in as **Art** under everything: an embedded
+smart object in Photoshop, a linked image on a locked layer in Illustrator.
+
 Balloons go in a **Letters** group on top: one **Balloon N** group each,
 with live text (the preset's font, size and leading, centred, the hub's line
 breaks) over a shape layer.

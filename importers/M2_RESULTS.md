@@ -496,6 +496,45 @@ shown again when back. The same rule for your text edits as in Illustrator
 **Still open:** the art layer of drawn pages (D7) isn't imported by either
 script yet. CSP gets balloons only as raster through the PSD.
 
+## D7: drawn pages in Photoshop and Illustrator (2026-11-26)
+
+Test page: a drawn page (2008 × 3071 px PNG at 300 dpi, covering the trim),
+no panels, two balloons, as `Project.add_art_page` writes it: the image beside
+page.svg, linked from `cpb-art` by a relative `xlink:href`.
+
+**Before:** Photoshop refused it ("The page has no panels."). Illustrator
+linked the image, the right size but **3 mm off** in x and y, and left it in
+a stray "Layer 1" under the white Paper, so the drawing was hidden.
+
+**Photoshop** (`import_page.psjs`):
+- A page with art and no panels is fine.
+- The image is placed as an **embedded smart object** (the PSD carries it,
+  and CSP can read it), scaled and moved onto the rect in page.svg, named
+  **Art**, under Comic Frames and Letters.
+- An update with different art places the new one above the old. The old one
+  is kept, hidden and untagged ("Old art"), since you may have painted fixes
+  into it.
+- Found while testing: on a drawn page the empty Comic Frames group was
+  selected, so Letters got built **inside** it. Letters is now moved above it.
+
+**Illustrator** (`import_page.jsx`):
+- A locked **Art** layer between Panels and Paper (removed when the page has
+  no art). The image stays **linked**, so a re-exported drawing updates.
+- The image is put exactly at page.svg's x, y, width and height.
+- Updates open their temporary copy **beside page.svg** (`.cpb-update-….svg`,
+  removed afterwards), not in the temp folder, so the relative link resolves.
+
+**Checks:** art at 3 mm, 170.011 mm wide in both apps (35 px at 300 dpi in
+Photoshop); moving the art in page.svg to x = 8 mm redrew it there (Photoshop:
+old art kept hidden; Illustrator: still linked, layer still locked); same file
+again: "Nothing changed"; generated pages get no Art layer and update as
+before; a PSD from the previous script still says "Nothing changed".
+
+**Not covered:** the change key is the `<image>` tag, so redrawing the art
+into the *same* file name isn't noticed by Photoshop (its copy is embedded).
+Illustrator's link picks it up by itself. The hub doesn't replace art yet, so
+this can wait.
+
 ## Files changed
 
 - `importers/photoshop/import_page.psjs`: top-level `await`; Border made

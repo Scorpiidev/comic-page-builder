@@ -74,7 +74,14 @@ function readPage(text) {
       fill: a.fill && a.fill !== "none" ? a.fill : null,
     });
   }
-  if (!page.panels.length) throw new Error("The page has no panels.");
+  // Drawn pages (D7): the hub's image under everything, placed at its rect.
+  const imgTag = text.match(/<image\b[^>]*id="cpb-art-image"[^>]*>/);
+  if (imgTag) {
+    const a = attrs(imgTag[0]);
+    page.art = { href: unescapeXml(a["xlink:href"] || a.href || ""), x: parseFloat(a.x), y: parseFloat(a.y),
+      w: parseFloat(a.width), h: parseFloat(a.height), key: fingerprint(imgTag[0]) };
+  } else page.art = null;
+  if (!page.panels.length && !page.art) throw new Error("The page has no panels.");
   page.panels.sort((p, q) => p.index - q.index);
 
   page.balloons = readBalloons(text);
@@ -517,6 +524,51 @@ async function placeFrame(group, p, page, tagged, comicFrames) {
   }
 }
 
+// ---------- art (drawn pages) ----------
+// The image is placed as an embedded smart object, so the PSD carries it
+// (and CSP can read it), scaled and moved onto the rect page.svg gives it.
+// Returns the layer, or null with a reason in `problems` if the file is gone.
+async function placeArt(doc, page, problems) {
+  const path = page.dir + "/" + page.art.href;
+  let entry;
+  try { entry = await localFileSystem.getEntryWithUrl("file:" + path); }
+  catch (e) { problems.push(`Couldn't find the page's art: ${path}`); return null; }
+  const token = localFileSystem.createSessionToken(entry);
+  await action.batchPlay([{ _obj: "placeEvent", null: { _path: token, _kind: "local" }, linked: false }], {});
+  const layer = doc.activeLayers[0];
+  const d = page.dpi;
+  const want = { left: px(page.art.x, d), top: px(page.art.y, d), w: px(page.art.w, d), h: px(page.art.h, d) };
+  let b = layer.bounds;
+  await layer.scale((want.w / (b.right - b.left)) * 100, (want.h / (b.bottom - b.top)) * 100);
+  b = layer.bounds;
+  await layer.translate(want.left - b.left, want.top - b.top);
+  layer.name = "Art";
+  await setTag(layer, { id: "cpb-art", key: page.art.key });
+  return layer;
+}
+
+// Update: new art (another file, or moved) goes in above the old, which is
+// kept hidden: you may have painted fixes into it.
+async function syncArt(doc, page, tagged, done, problems) {
+  const old = tagged.get("cpb-art");
+  if (!page.art) return;
+  if (old && old.tag.key === page.art.key) return;
+  if (old) await selectLayer(old.layer);
+  else await selectLayer(doc.layers[doc.layers.length - 1]);
+  const layer = await placeArt(doc, page, problems);
+  if (!layer) return;
+  if (old) {
+    old.layer.name = "Old art";
+    await setTag(old.layer, { id: "" });
+    old.layer.visible = false;
+  } else {
+    // Under everything else, like a new document.
+    const bottom = doc.layers[doc.layers.length - 1];
+    if (bottom.id !== layer.id && !bottom.isBackgroundLayer) layer.move(bottom, PLACEAFTER);
+  }
+  done.art = true;
+}
+
 // ---------- letters ----------
 // A "Letters" group on top of everything: one "Balloon N" group per balloon,
 // a text layer over a shape layer. The text is live type in the preset's
@@ -658,18 +710,27 @@ async function buildDocument(page, fileName) {
   });
   const guides = guideText(page);
   addGuides(doc, guides);
+  const problems = [];
+  if (page.art) await placeArt(doc, page, problems);
   const frames = [];
   // Build the last panel first so Frame 1 ends up at the top of the Layers panel.
   for (const p of page.panels.filter((q) => !q.inset).reverse()) frames.push(await buildFrame(doc, page, p));
   // Insets last, so they sit above the panels they overlap (the hub paints them last too).
   for (const n of insetNumbers(page)) frames.push(await buildInset(doc, page, n));
-  const group = await doc.createLayerGroup({ name: "Comic Frames", fromLayers: frames });
+  // Kept even when empty (drawn pages): its tag holds the page number and guides for updates.
+  const group = frames.length ? await doc.createLayerGroup({ name: "Comic Frames", fromLayers: frames })
+    : await doc.createLayerGroup({ name: "Comic Frames" });
   await setTag(group, { id: "cpb-frames", page: page.number, guides });
   const missing = [];
-  await buildLetters(doc, page, missing);
+  const letters = await buildLetters(doc, page, missing);
+  // On a drawn page Comic Frames is empty, and Photoshop builds new layers
+  // inside a selected empty group, so put Letters back above it.
+  if (letters) letters.move(group, PLACEBEFORE);
   const balloons = page.balloons.length ? ` and ${page.balloons.length} balloons` : "";
-  return `Imported ${fileName}: ${page.panels.length} panels${balloons} on a ${page.canvasW} × ${page.canvasH} mm ` +
-    `canvas (${W} × ${H} px at ${d} dpi).` + (missing.length ? "\n\n" + fontLine(missing) : "");
+  const what = page.panels.length ? `${page.panels.length} panels` : "a drawn page";
+  const notes = problems.concat(missing.length ? [fontLine(missing)] : []);
+  return `Imported ${fileName}: ${what}${balloons} on a ${page.canvasW} × ${page.canvasH} mm ` +
+    `canvas (${W} × ${H} px at ${d} dpi).` + (notes.length ? "\n\n" + notes.join("\n") : "");
 }
 
 // ---------- update an existing document ----------
@@ -689,8 +750,9 @@ async function updateDocument(doc, page, tagged, fileName) {
   const d = page.dpi;
   const frames = tagged.get("cpb-frames");
   const done = { redrawn: [], added: [], hidden: [], shown: [], insets: new Set(),
-    balloonsRedrawn: [], balloonsAdded: [], balloonsHidden: [], balloonsShown: [], kept: [] };
-  const missing = [];
+    balloonsRedrawn: [], balloonsAdded: [], balloonsHidden: [], balloonsShown: [], kept: [], art: false };
+  const missing = [], problems = [];
+  await syncArt(doc, page, tagged, done, problems);
   await addInsetGroups(doc, page, tagged, frames.layer);
 
   for (const p of page.panels) {
@@ -747,7 +809,9 @@ async function updateDocument(doc, page, tagged, fileName) {
   if (done.balloonsHidden.length) lines.push(`Hidden balloons (gone from the page, kept): ${done.balloonsHidden.join(", ")}.`);
   if (done.kept.length) lines.push(`You'd edited the text of balloon ${done.kept.join(", ")} here and the hub changed it too: ` +
     `your version is kept, hidden, under the new one ("Your edit of balloon …").`);
+  if (done.art) lines.push("New art placed; the old art layer is kept, hidden (\"Old art\").");
   if (missing.length) lines.push(fontLine(missing));
+  lines.push(...problems);
   if (done.hidden.length) lines.push(`Hidden (their panel left the layout; art kept): ${done.hidden.join(", ")}.`);
   if (!lines.length && guides === frames.tag.guides) return `${doc.name} already matches ${fileName}. Nothing changed.`;
   if (!lines.length) lines.push("Moved the trim and safe guides.");
@@ -780,6 +844,7 @@ async function main() {
   const file = await localFileSystem.getFileForOpening({ types: ["svg"] });
   if (!file) return; // cancelled
   const page = readPage(await file.read());
+  page.dir = file.nativePath.replace(/\\/g, "/").replace(/\/[^/]*$/, "");
   const message = await core.executeAsModal(async (ctx) => {
     const doc = app.documents.length ? app.activeDocument : null;
     const tagged = doc ? await findTagged(doc) : new Map();

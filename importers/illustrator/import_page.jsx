@@ -13,6 +13,7 @@
 //   Guides    trim, safe area, crop marks (locked, doesn't print)
 //   Letters   balloons and text (where lettering goes)
 //   Panels    one path per panel, named "Panel 1", "Panel 2"...
+//   Art       a drawn page's image, linked (locked)
 //   Paper     white canvas (locked)
 //
 // The hub's items carry a note (Window > Attributes shows it), such as
@@ -29,6 +30,7 @@
         ["cpb-guides", "Guides"],
         ["cpb-letters", "Letters"],
         ["cpb-panels", "Panels"],
+        ["cpb-art", "Art"],
         ["cpb-paper", "Paper"]
     ];
     var NOTE = "Comic Page Builder: ";
@@ -183,6 +185,26 @@
         return missing;
     }
 
+    // A drawn page's image, as page.svg places it (mm), or null.
+    function artRect(text) {
+        var tag = text.match(/<image\b[^>]*id="cpb-art-image"[^>]*>/);
+        if (!tag) return null;
+        return { x: parseFloat(attr(tag[0], "x")), y: parseFloat(attr(tag[0], "y")),
+                 w: parseFloat(attr(tag[0], "width")), h: parseFloat(attr(tag[0], "height")) };
+    }
+
+    // Illustrator links the image at the right size but not at the right spot
+    // (3 mm off in the test), so put it exactly where page.svg says.
+    function placeArt(doc, rect) {
+        if (!rect) return;
+        var img = itemsByName(doc)["cpb-art-image"];
+        if (!img) return;
+        var r = doc.artboards[0].artboardRect;
+        img.width = rect.w / MM;
+        img.height = rect.h / MM;
+        img.position = [r[0] + rect.x / MM, r[1] - rect.y / MM];
+    }
+
     function fontReport(missing) {
         return missing.length ? "\nNot installed, so the balloons use a stand-in: " + missing.join(", ") + "." : "";
     }
@@ -270,10 +292,11 @@
     }
 
     // ---------- new document ----------
-    function importFresh(file, page, elements, texts) {
+    function importFresh(file, page, elements, texts, art) {
         var doc = app.open(file);
         var report = [];
         var missing = rebuildTexts(doc, texts);
+        placeArt(doc, art);
         var created = {};
 
         // Tag the hub's items first, while they still have their SVG ids as names.
@@ -296,7 +319,7 @@
             var src = findByName(doc, id);
             if (src) {
                 moveContents(src, created[id]);
-            } else if (id !== "cpb-letters") {
+            } else if (id !== "cpb-letters" && id !== "cpb-art") {
                 report.push("Couldn't find " + id + " (Illustrator may not have kept the id).");
             }
         }
@@ -322,24 +345,29 @@
         created["cpb-guides"].printable = false;
         created["cpb-guides"].locked = true;
         created["cpb-paper"].locked = true;
+        if (art) created["cpb-art"].locked = true;
+        else created["cpb-art"].remove(); // generated pages have no art
         created["cpb-letters"].hasSelectedArtwork = false;
         doc.activeLayer = created["cpb-letters"];
 
         // Illustrator would save this document back over the hub's SVG as its own SVG.
-        return "Imported " + file.name + ": " + count + " panels.\n" +
-            (report.length ? "\n" + report.join("\n") : "Layers: Guides, Letters, Panels, Paper.") + fontReport(missing) +
+        return "Imported " + file.name + ": " + (count || !art ? count + " panels" : "a drawn page") + ".\n" +
+            (report.length ? "\n" + report.join("\n") : "Layers: Guides, Letters, Panels, " + (art ? "Art, " : "") + "Paper.") + fontReport(missing) +
             "\n\nSave it as an .ai file (File > Save As) before you letter, so " + file.name + " stays the hub's.";
     }
 
     // ---------- update an existing document ----------
-    function update(doc, file, page, elements, tagged, texts) {
+    function update(doc, file, page, elements, tagged, texts, art) {
         // Open the new page from a temporary copy. If this document IS that
         // page.svg (never saved as .ai), opening the file again would just hand
         // back this document, and closing it afterwards would close your work.
-        var tmp = new File(Folder.temp + "/cpb-update-" + new Date().getTime() + ".svg");
+        // Beside the original, not in the temp folder, so a drawn page's
+        // image (linked by a relative path) is still found.
+        var tmp = new File(file.parent.fsName + "/.cpb-update-" + new Date().getTime() + ".svg");
         if (!file.copy(tmp)) throw new Error("Couldn't copy " + file.name + " to a temporary file.");
         var src = app.open(tmp);
         var missing = rebuildTexts(src, texts);
+        placeArt(src, art);
         var fresh = itemsByName(src); // while src is the active document (see itemsByName)
         var touched = []; // layers unlocked or shown for the update, with their old state
 
@@ -519,6 +547,7 @@
     }
     var elements = hubElements(text);
     var texts = balloonTexts(text);
+    var art = artRect(text);
 
     try {
         var doc = app.documents.length ? app.activeDocument : null;
@@ -533,7 +562,7 @@
             if (problem) { alert(problem); return; }
             var risk = undoRisk(doc);
             if (risk && !confirm(risk + "\n\nUpdate anyway?")) return;
-            alert(update(doc, file, page, elements, tags.byId, texts));
+            alert(update(doc, file, page, elements, tags.byId, texts, art));
         } else if (doc && openDocumentFor(file) === doc) {
             // Opening it again would hand back this document and re-sort its layers.
             alert(doc.name + " has no Comic Page Builder notes (it was imported before updates existed), " +
@@ -542,7 +571,7 @@
             alert(file.name + " is already open in Illustrator.\n\n" +
                   "To update it, switch to it and run the script again. To import it fresh, close it first.");
         } else {
-            alert(importFresh(file, page, elements, texts));
+            alert(importFresh(file, page, elements, texts, art));
         }
     } catch (err) {
         alert("Comic Page Builder import failed:\n" + err.message + (err.line ? " (line " + err.line + ")" : ""));

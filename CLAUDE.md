@@ -157,8 +157,12 @@ Photoshop, Illustrator and Krita. The plan and every decision live in
     text as one centred point text in the `ps_name` face. Both keep text you
     edited in the app (hidden) when the hub changes that balloon. Hand-cut
     pages and insets checked in Illustrator too.
-  - Next: the art layer of drawn pages (D7) in the importers. Nice to
-    have: zoom on the balloon canvas, undo.
+  - **Drawn pages in the importers done 2026-11-26:** Photoshop places the
+    art as an embedded smart object (old art kept hidden on change),
+    Illustrator keeps it linked on a locked Art layer and fixes its
+    position (it came in 3 mm off). Details in `importers/M2_RESULTS.md`.
+  - Next: nice to have: zoom on the balloon canvas, undo. Then M4's test
+    print and M6 (Krita).
 
 The previous work was done in a cloud session that can't reach this PC's
 apps. That's why you're here.
