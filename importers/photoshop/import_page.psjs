@@ -77,6 +77,8 @@ function readPage(text) {
   if (!page.panels.length) throw new Error("The page has no panels.");
   page.panels.sort((p, q) => p.index - q.index);
 
+  page.balloons = readBalloons(text);
+
   // The paper-coloured band around each inset, so what's behind stops short of it.
   page.gaps = [];
   const gapRe = /<path\b[^>]*id="cpb-inset-gap-\d+"[^>]*>/g;
@@ -88,22 +90,83 @@ function readPage(text) {
   return page;
 }
 
+const unescapeXml = (s) => s.replace(/&#10;/g, "\n").replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+
+// A short fingerprint of some text (FNV-1a), to notice changes without
+// storing the whole thing. Same as in the Illustrator script.
+function fingerprint(str) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = (h + (h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24)) >>> 0;
+  }
+  return h.toString(16);
+}
+
+// The Letters layer: one group per balloon, holding its outline and its text
+// already broken into lines (tspans with the first baseline's position).
+// Balloon parameters stay the hub's business; this only needs what to draw.
+function readBalloons(text) {
+  const out = [];
+  const re = /<g\b[^>]*id="cpb-balloon-(\d+)"[^>]*>[\s\S]*?<\/g>/g;
+  let m;
+  while ((m = re.exec(text))) {
+    const g = attrs(m[0].match(/<g\b[^>]*>/)[0]);
+    let font = {};
+    try { font = JSON.parse(unescapeXml(g["cpb:font"] || "{}")); } catch (e) { /* the defaults below will do */ }
+    const pathTag = m[0].match(/<path\b[^>]*>/);
+    const textEl = m[0].match(/<text\b[^>]*>([\s\S]*?)<\/text>/);
+    if (!pathTag) continue;
+    const pa = attrs(pathTag[0]);
+    const spans = [];
+    if (textEl) {
+      const sre = /<tspan\b([^>]*)>([\s\S]*?)<\/tspan>/g;
+      let s;
+      while ((s = sre.exec(textEl[1]))) {
+        const sa = attrs(s[1]);
+        spans.push({ x: parseFloat(sa.x), y: parseFloat(sa.y), text: unescapeXml(s[2]) });
+      }
+    }
+    const size = Number(font.size_pt) || 8;
+    out.push({
+      number: Number(m[1]),
+      key: fingerprint(m[0]),
+      outline: parsePath(pa.d),
+      fill: pa.fill && pa.fill !== "none" ? pa.fill : null,
+      stroke: pa.stroke && pa.stroke !== "none" ? pa.stroke : null,
+      strokeWidth: parseFloat(pa["stroke-width"] || "0.35"),
+      dash: pa["stroke-dasharray"] ? pa["stroke-dasharray"].split(/[\s,]+/).map(Number) : null,
+      lines: spans.map((sp) => sp.text),
+      x: spans.length ? spans[0].x : 0, y: spans.length ? spans[0].y : 0,
+      size,
+      // Baseline to baseline as the hub laid it out, in points.
+      leading: spans.length > 1 ? (spans[1].y - spans[0].y) * 72 / 25.4 : size * (Number(font.leading) || 1.2),
+      psName: font.ps_name || "",
+      color: textEl ? (attrs(textEl[0].match(/<text\b[^>]*>/)[0]).fill || "#1b1b1b") : "#1b1b1b",
+    });
+  }
+  return out;
+}
+
 // An SVG path made of M/L/H/V/C/Z (absolute), the only commands the hub writes,
-// as a list of anchors in mm. A curve's first handle belongs to the anchor
+// as a list of subpaths (a thought balloon's trail of bubbles has several),
+// each a list of anchors in mm. A curve's first handle belongs to the anchor
 // before it ("forward"), its second to the anchor it ends on ("backward"),
 // which is how Photoshop stores path points.
 function parsePath(d) {
   // Any letter is a token, so a command we don't know stops the import
   // instead of being skipped and leaving a wrong shape.
   const tokens = d.match(/[a-z]|-?\d*\.?\d+(?:e[-+]?\d+)?/gi) || [];
-  const pts = [];
+  const subpaths = [];
+  let pts = [];
   let i = 0, cmd = null;
   const next = () => Number(tokens[i++]);
   const xy = () => ({ x: next(), y: next() });
   while (i < tokens.length) {
     if (/[a-z]/i.test(tokens[i])) cmd = tokens[i++];
-    if (cmd === "Z") continue;
+    if (cmd === "Z") { closeSubpath(pts); if (pts.length) subpaths.push(pts); pts = []; continue; }
     const prev = pts[pts.length - 1];
+    if (cmd === "M" && pts.length) { closeSubpath(pts); subpaths.push(pts); pts = []; }
     if (cmd === "M" || cmd === "L") pts.push(xy());
     else if (cmd === "H") pts.push({ x: next(), y: prev.y });
     else if (cmd === "V") pts.push({ x: prev.x, y: next() });
@@ -113,13 +176,18 @@ function parsePath(d) {
       pts.push({ ...p, backward: c2 });
     } else throw new Error("Unexpected path command " + cmd + " in a panel outline.");
   }
-  // A rounded outline ends on its starting point: fold that duplicate back in.
+  closeSubpath(pts);
+  if (pts.length) subpaths.push(pts);
+  return subpaths;
+}
+
+// A rounded outline ends on its starting point: fold that duplicate back in.
+function closeSubpath(pts) {
   const first = pts[0], last = pts[pts.length - 1];
   if (pts.length > 1 && Math.abs(first.x - last.x) < 1e-6 && Math.abs(first.y - last.y) < 1e-6) {
     if (last.backward) first.backward = last.backward;
     pts.pop();
   }
-  return pts;
 }
 
 // ---------- helpers ----------
@@ -146,7 +214,8 @@ function rectShape(r, radius) {
 
 // Where a frame goes, in pixels: a rectangle, plus the outline for polygons.
 const frameRect = (p, d) => ({ left: px(p.x, d), top: px(p.y, d), right: px(p.x + p.w, d), bottom: px(p.y + p.h, d),
-  outline: p.outline ? p.outline.map((q) => scalePoint(q, d)) : null });
+  outline: p.outline ? scaleOutline(p.outline, d) : null });
+const scaleOutline = (subpaths, d) => subpaths.map((sp) => sp.map((q) => scalePoint(q, d)));
 const scalePoint = (q, d) => {
   const s = (v) => v && { x: px(v.x, d), y: px(v.y, d) };
   return { x: px(q.x, d), y: px(q.y, d), forward: s(q.forward), backward: s(q.backward) };
@@ -154,14 +223,14 @@ const scalePoint = (q, d) => {
 
 // A closed path for a shape layer. Corners are rounded already (the hub draws
 // them as curves), so there's no radius here.
-function pathShape(points) {
+function pathShape(subpaths) {
   const paint = (v) => ({ _obj: "paint", horizontal: unit(v.x), vertical: unit(v.y) });
   return {
     _obj: "pathClass",
     pathComponents: [{
       _obj: "pathComponent",
       shapeOperation: { _enum: "shapeOperation", _value: "add" },
-      subpathListKey: [{
+      subpathListKey: subpaths.map((points) => ({
         _obj: "subpathsList", closedSubpath: true,
         points: points.map((q) => {
           const pt = { _obj: "pathPoint", anchor: paint(q) };
@@ -169,7 +238,7 @@ function pathShape(points) {
           if (q.backward) pt.backward = paint(q.backward);
           return pt;
         }),
-      }],
+      })),
     }],
   };
 }
@@ -184,7 +253,8 @@ const frameKey = (page, p) => [p.x, p.y, p.w, p.h, p.stroke, p.strokeWidth, p.fi
 
 // One shape layer (rectangle or polygon), made above the selected layer. `fill` and
 // `stroke` are hex colours or null.
-async function makeShape(name, r, { fill, stroke, strokeWidth, radius }) {
+// `dash` is a list of dash and gap lengths in px; `join` is "miter" or "round".
+async function makeShape(name, r, { fill, stroke, strokeWidth, radius, dash, join }) {
   const strokeStyle = {
     _obj: "strokeStyle", strokeStyleVersion: 2,
     strokeEnabled: !!stroke, fillEnabled: !!fill,
@@ -194,10 +264,12 @@ async function makeShape(name, r, { fill, stroke, strokeWidth, radius }) {
       strokeStyleLineWidth: unit(strokeWidth),
       strokeStyleLineAlignment: { _enum: "strokeStyleLineAlignment", _value: "strokeStyleAlignCenter" },
       strokeStyleLineCapType: { _enum: "strokeStyleLineCapType", _value: "strokeStyleButtCap" },
-      strokeStyleLineJoinType: { _enum: "strokeStyleLineJoinType", _value: "strokeStyleMiterJoin" },
+      strokeStyleLineJoinType: { _enum: "strokeStyleLineJoinType", _value: join === "round" ? "strokeStyleRoundJoin" : "strokeStyleMiterJoin" },
       strokeStyleContent: { _obj: "solidColorLayer", color: rgb(stroke) },
       strokeStyleOpacity: { _unit: "percentUnit", _value: 100 },
     });
+    // Photoshop measures dashes in stroke widths.
+    if (dash && dash.length) strokeStyle.strokeStyleLineDashSet = dash.map((v) => ({ _unit: "noneUnit", _value: v / strokeWidth }));
   }
   await action.batchPlay([{
     _obj: "make",
@@ -352,7 +424,7 @@ function removeGuides(doc, text) {
 // Each inset is a group above the ordinary frames: its frames, and under them
 // an "Inset gap" shape, a paper-coloured band that hides what's behind.
 const insetNumbers = (page) => [...new Set(page.panels.filter((p) => p.inset).map((p) => p.inset))].sort((a, b) => a - b);
-const gapRect = (page, g) => ({ outline: g.outline.map((q) => scalePoint(q, page.dpi)) });
+const gapRect = (page, g) => ({ outline: scaleOutline(g.outline, page.dpi) });
 const gapStyle = (page, g) => ({ fill: g.color, stroke: g.color, strokeWidth: px(g.width, page.dpi), radius: 0 });
 const gapKey = (g) => [g.d, g.color, g.width].join(" ");
 
@@ -445,6 +517,135 @@ async function placeFrame(group, p, page, tagged, comicFrames) {
   }
 }
 
+// ---------- letters ----------
+// A "Letters" group on top of everything: one "Balloon N" group per balloon,
+// a text layer over a shape layer. The text is live type in the preset's
+// exact face (by PostScript name), centred, with the hub's line breaks.
+const balloonStyle = (page, b) => ({
+  fill: b.fill, stroke: b.stroke, strokeWidth: px(b.strokeWidth, page.dpi), radius: 0, join: "round",
+  dash: b.dash ? b.dash.map((v) => px(v, page.dpi)) : null,
+});
+const balloonShape = (page, b) => ({ outline: scaleOutline(b.outline, page.dpi) });
+
+// Photoshop's scripting takes type sizes as if the document were 72 dpi, so
+// 8 pt at 600 dpi has to be asked for as 8 × 600 / 72. The Character panel
+// then shows 8 pt, and that's what prints.
+async function makeText(doc, page, b, missing) {
+  const k = page.dpi / 72;
+  const opts = { contents: b.lines.join("\r"), fontSize: b.size * k,
+    position: { x: px(b.x, page.dpi), y: px(b.y, page.dpi) } };
+  let t;
+  try {
+    t = await doc.createTextLayer({ ...opts, fontName: b.psName || undefined });
+  } catch (e) {
+    t = await doc.createTextLayer(opts);
+  }
+  const ti = t.textItem;
+  if (b.psName && ti.characterStyle.font !== b.psName && !missing.includes(b.psName)) missing.push(b.psName);
+  // The anchor is the first baseline; centring keeps it where the hub put it.
+  ti.paragraphStyle.justification = constants.Justification.CENTER;
+  ti.characterStyle.leading = b.leading * k;
+  try {
+    const c = new app.SolidColor();
+    const n = parseInt(b.color.replace("#", ""), 16);
+    c.rgb.red = (n >> 16) & 255; c.rgb.green = (n >> 8) & 255; c.rgb.blue = n & 255;
+    ti.characterStyle.color = c;
+  } catch (e) { /* the default colour is close enough */ }
+  await setTag(t, { id: `cpb-balloon-${b.number}-text`, words: fingerprint(String(ti.contents)) });
+  return t;
+}
+
+async function makeOutline(page, b) {
+  const shape = await makeShape(`Balloon ${b.number}`, balloonShape(page, b), balloonStyle(page, b));
+  await setTag(shape, { id: `cpb-balloon-${b.number}-outline` });
+  return shape;
+}
+
+async function buildBalloon(doc, page, b, missing) {
+  const shape = await makeOutline(page, b);
+  const text = await makeText(doc, page, b, missing);
+  const group = await doc.createLayerGroup({ name: `Balloon ${b.number}`, fromLayers: [text, shape] });
+  await setTag(group, { id: `cpb-balloon-${b.number}`, key: b.key });
+  return group;
+}
+
+// New document: balloons in file order, each above the last, as in page.svg.
+async function buildLetters(doc, page, missing) {
+  if (!page.balloons.length) return null;
+  const groups = [];
+  for (const b of page.balloons) groups.push(await buildBalloon(doc, page, b, missing));
+  const letters = await doc.createLayerGroup({ name: "Letters", fromLayers: groups });
+  await setTag(letters, { id: "cpb-letters" });
+  return letters;
+}
+
+// Update: redraw balloons whose group changed in page.svg, add new ones, hide
+// ones that left (never deleted). Text you edited here is never thrown away:
+// if the hub changed that balloon too, your layer is kept, hidden, under the new one.
+async function syncLetters(doc, page, tagged, comicFrames, done, missing) {
+  let letters = tagged.get("cpb-letters");
+  if (!letters && !page.balloons.length) return;
+  if (!letters) {
+    await selectLayer(comicFrames);
+    const group = await doc.createLayerGroup({ name: "Letters" });
+    group.move(comicFrames, PLACEBEFORE);
+    await setTag(group, { id: "cpb-letters" });
+    letters = { layer: group, tag: { id: "cpb-letters" } };
+    tagged.set("cpb-letters", letters);
+  }
+  const wanted = new Set();
+  for (const b of page.balloons) {
+    const id = `cpb-balloon-${b.number}`;
+    wanted.add(id);
+    const g = tagged.get(id);
+    if (!g) {
+      await selectLayer(letters.layer);
+      const group = await buildBalloon(doc, page, b, missing);
+      group.move(letters.layer, PLACEINSIDE);
+      done.balloonsAdded.push(b.number);
+      continue;
+    }
+    const wasHidden = g.tag.hidden === "1";
+    if (wasHidden) { g.layer.visible = true; done.balloonsShown.push(b.number); }
+    const outline = tagged.get(`${id}-outline`), text = tagged.get(`${id}-text`);
+    if (g.tag.key === b.key && outline && text) {
+      if (wasHidden) await setTag(g.layer, { id, key: b.key });
+      continue;
+    }
+    if (outline) await replaceShape(outline.layer, balloonShape(page, b), balloonStyle(page, b), `${id}-outline`);
+    else await addMissingShape(g.layer, balloonShape(page, b), balloonStyle(page, b), `Balloon ${b.number}`, `${id}-outline`, "bottom");
+    if (text) {
+      const edited = text.tag.words && fingerprint(String(text.layer.textItem.contents)) !== text.tag.words;
+      await selectLayer(text.layer);
+      const fresh = await makeText(doc, page, b, missing);
+      if (edited) {
+        text.layer.name = `Your edit of balloon ${b.number}`;
+        await setTag(text.layer, { id: "" }); // yours now, not the hub's
+        done.kept.push(b.number);
+      } else {
+        text.layer.delete();
+      }
+      fresh.move(g.layer, PLACEINSIDE);
+      // Hidden last: setting the tag or moving its neighbour showed it again.
+      if (edited) text.layer.visible = false;
+    } else {
+      await selectLayer(g.layer);
+      const fresh = await makeText(doc, page, b, missing);
+      fresh.move(g.layer, PLACEINSIDE);
+    }
+    await setTag(g.layer, { id, key: b.key });
+    done.balloonsRedrawn.push(b.number);
+  }
+  for (const [id, t] of tagged) {
+    if (!/^cpb-balloon-\d+$/.test(id) || wanted.has(id) || t.tag.hidden === "1") continue;
+    t.layer.visible = false;
+    await setTag(t.layer, { ...t.tag, hidden: "1" });
+    done.balloonsHidden.push(id.split("-").pop());
+  }
+}
+
+const fontLine = (missing) => missing.length ? `Not installed, so their balloons use a stand-in: ${missing.join(", ")}.` : "";
+
 // ---------- new document ----------
 async function buildDocument(page, fileName) {
   const d = page.dpi;
@@ -464,8 +665,11 @@ async function buildDocument(page, fileName) {
   for (const n of insetNumbers(page)) frames.push(await buildInset(doc, page, n));
   const group = await doc.createLayerGroup({ name: "Comic Frames", fromLayers: frames });
   await setTag(group, { id: "cpb-frames", page: page.number, guides });
-  return `Imported ${fileName}: ${page.panels.length} panels on a ${page.canvasW} × ${page.canvasH} mm ` +
-    `canvas (${W} × ${H} px at ${d} dpi).`;
+  const missing = [];
+  await buildLetters(doc, page, missing);
+  const balloons = page.balloons.length ? ` and ${page.balloons.length} balloons` : "";
+  return `Imported ${fileName}: ${page.panels.length} panels${balloons} on a ${page.canvasW} × ${page.canvasH} mm ` +
+    `canvas (${W} × ${H} px at ${d} dpi).` + (missing.length ? "\n\n" + fontLine(missing) : "");
 }
 
 // ---------- update an existing document ----------
@@ -484,7 +688,9 @@ function sizeProblem(doc, page) {
 async function updateDocument(doc, page, tagged, fileName) {
   const d = page.dpi;
   const frames = tagged.get("cpb-frames");
-  const done = { redrawn: [], added: [], hidden: [], shown: [], insets: new Set() };
+  const done = { redrawn: [], added: [], hidden: [], shown: [], insets: new Set(),
+    balloonsRedrawn: [], balloonsAdded: [], balloonsHidden: [], balloonsShown: [], kept: [] };
+  const missing = [];
   await addInsetGroups(doc, page, tagged, frames.layer);
 
   for (const p of page.panels) {
@@ -510,6 +716,7 @@ async function updateDocument(doc, page, tagged, fileName) {
   }
 
   await syncInsets(doc, page, tagged, frames.layer, done);
+  await syncLetters(doc, page, tagged, frames.layer, done, missing);
 
   // Frames whose panel left the layout: hidden, never deleted, so no art is lost.
   const wanted = new Set(page.panels.map((p) => `cpb-frame-${p.index}`));
@@ -534,6 +741,13 @@ async function updateDocument(doc, page, tagged, fileName) {
   if (done.added.length) lines.push(`New frames: ${done.added.join(", ")}.`);
   if (done.shown.length) lines.push(`Shown again: frames ${done.shown.join(", ")}.`);
   if (done.insets.size) lines.push("Rearranged the inset groups.");
+  if (done.balloonsRedrawn.length) lines.push(`Redrawn balloons: ${done.balloonsRedrawn.join(", ")}.`);
+  if (done.balloonsAdded.length) lines.push(`New balloons: ${done.balloonsAdded.join(", ")}.`);
+  if (done.balloonsShown.length) lines.push(`Balloons shown again: ${done.balloonsShown.join(", ")}.`);
+  if (done.balloonsHidden.length) lines.push(`Hidden balloons (gone from the page, kept): ${done.balloonsHidden.join(", ")}.`);
+  if (done.kept.length) lines.push(`You'd edited the text of balloon ${done.kept.join(", ")} here and the hub changed it too: ` +
+    `your version is kept, hidden, under the new one ("Your edit of balloon …").`);
+  if (missing.length) lines.push(fontLine(missing));
   if (done.hidden.length) lines.push(`Hidden (their panel left the layout; art kept): ${done.hidden.join(", ")}.`);
   if (!lines.length && guides === frames.tag.guides) return `${doc.name} already matches ${fileName}. Nothing changed.`;
   if (!lines.length) lines.push("Moved the trim and safe guides.");

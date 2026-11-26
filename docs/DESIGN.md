@@ -603,9 +603,11 @@ onto the core; `core/` sits beside it and doesn't touch it.
 1. ~~**CSP and PSD:** what survives the import?~~ Answered in M2: structure
    and clipping survive, borders go raster; vector borders come from
    `page_borders.svg` (§8.4).
-2. **Illustrator SVG import:** how faithfully do `clipPath` and positioned
-   `tspan`s come through? Still open: the M2 page had no letters or clip
-   references. Test it with M5's balloons.
+2. ~~**Illustrator SVG import:** how faithfully do `clipPath` and positioned
+   `tspan`s come through?~~ Answered 2026-11-26 with M5's balloons: each
+   tspan becomes its own left-aligned point text, and fonts are matched by
+   family only. The script now rebuilds each balloon's text as one centred
+   point text in the `ps_name` face (`importers/M2_RESULTS.md`).
 3. ~~**Photoshop on the user's version:** do shape layers and vector masks
    work through Action Manager there?~~ Answered in M2: yes, on 27.4, after
    two fixes.

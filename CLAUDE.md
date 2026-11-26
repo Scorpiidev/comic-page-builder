@@ -150,8 +150,14 @@ Photoshop, Illustrator and Krita. The plan and every decision live in
     their own group with a paper-coloured gap shape (tested 2026-11-26, see
     `importers/M2_RESULTS.md`). Illustrator with hand-cut pages is still
     untested.
-  - Next: letters (and art) in the PS and AI importers,
-    then test in the real apps (open question 2 in DESIGN.md §15). Nice to
+  - **Balloons in the importers done 2026-11-26** (local session, tested in
+    Photoshop 27.4 and Illustrator 30.2.1): Photoshop gets a Letters group
+    (Balloon N = live text over a shape layer; type sizes are scaled by
+    dpi/72 because UXP assumes 72 dpi), Illustrator rebuilds each balloon's
+    text as one centred point text in the `ps_name` face. Both keep text you
+    edited in the app (hidden) when the hub changes that balloon. Hand-cut
+    pages and insets checked in Illustrator too.
+  - Next: the art layer of drawn pages (D7) in the importers. Nice to
     have: zoom on the balloon canvas, undo.
 
 The previous work was done in a cloud session that can't reach this PC's

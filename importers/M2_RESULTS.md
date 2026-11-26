@@ -427,6 +427,75 @@ which the first parser silently skipped, drawing a wrong gap.
 **Not tested yet:** Illustrator with hand-cut pages and insets. Its script
 copies every `cpb-` item from the SVG, so it should work.
 
+## M5: balloons in Photoshop and Illustrator (2026-11-26)
+
+Test page: a hand-cut page with an inset and one balloon of each kind
+(speech, thought, shout, whisper, caption), dialogue in Comic Sans MS **Bold**
+(`ComicSansMS-Bold`) and the caption in Segoe UI **Semibold Italic**. Faces
+whose family name alone would give the wrong style, on purpose.
+
+### Illustrator (30.2.1)
+
+Hand-cut panels and the inset gap came in right as they were (open question
+2's clip-path half: the panels don't need clip paths). The balloon text didn't:
+- **Each tspan became its own left-aligned point text**, so a 4-line balloon
+  was 4 loose text objects.
+- **Fonts picked by family only:** Bold came in as Comic Sans Regular, the
+  caption as plain Segoe UI.
+- **Text changes would never have reached an update:** the change key was the
+  fingerprint of the `<text>` tag alone, and the words live inside it.
+
+**Fixed** (`illustrator/import_page.jsx`):
+- After opening the page (fresh or the update's temporary copy), each balloon's
+  text is rebuilt as **one point text**: the hub's lines as paragraphs,
+  centred on the first baseline, font by `ps_name`, the preset's size, and
+  leading taken from the tspans' spacing.
+- A text's key includes its words.
+- Text notes carry a fingerprint of the words (`| words …`). If you edited a
+  balloon's words in Illustrator and the hub changed that balloon too, yours
+  is kept, hidden and no longer the hub's ("Your edit of …"), under the new one.
+- A font that isn't installed is named in the final message; the balloon
+  keeps the stand-in Illustrator picked.
+- Inset gaps are named "Inset gap N".
+
+### Photoshop (27.4)
+
+New in `photoshop/import_page.psjs`: a **Letters** group above Comic Frames,
+one **Balloon N** group per balloon, holding a live **text layer** over a
+**shape layer** (round joins; whisper dashes). It's built on import and kept
+in line on updates, with the same rules as frames: redrawn when the balloon's
+group in page.svg changed, added when new, hidden (never deleted) when gone,
+shown again when back. The same rule for your text edits as in Illustrator
+(kept, hidden, untagged).
+
+**Found while testing:**
+- **Type size at 600 dpi:** `createTextLayer({fontSize: 8})` gave text 8 px
+  tall (ExtendScript read it back as 0.96 pt). Photoshop's UXP scripting
+  takes type sizes as if the document were 72 dpi, so the script asks for
+  size × dpi/72. The Character panel then shows 8 pt. Leading the same.
+- The anchor is the first baseline, and centring keeps it in place, so the
+  hub's tspan position can be used as is.
+- A thought balloon's outline has several subpaths (the bubbles), so
+  `parsePath` returns a list of subpaths now.
+- Hiding the kept "Your edit" layer before tagging and moving it didn't
+  stick (it came back visible); it's hidden last now.
+
+### Checks
+- Both apps: the page matches the hub's layout. Text centred in the
+  balloons, the exact faces, 8 pt / 7 pt, leading 9.6 / 8.4 pt.
+- Update with balloon 1 moved and balloon 2's words changed after editing
+  them by hand: 1 redrawn, 2's new text on top and the hand edit kept,
+  hidden. Same file again: "Nothing changed".
+- Photoshop: balloon 3 removed in the hub → hidden; back → shown.
+- A preset with a font that isn't installed (`NoSuchFont-Regular`): both
+  apps import, name it in the message, and use a stand-in (Photoshop: Myriad
+  Pro).
+- Regression: a page without balloons imports as before; a PSD made by the
+  previous script updates with "Nothing changed".
+
+**Still open:** the art layer of drawn pages (D7) isn't imported by either
+script yet. CSP gets balloons only as raster through the PSD.
+
 ## Files changed
 
 - `importers/photoshop/import_page.psjs`: top-level `await`; Border made

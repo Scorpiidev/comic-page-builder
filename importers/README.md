@@ -25,6 +25,10 @@ Inside each frame: **Border N** (shape layer, editable stroke), **Ink**,
 **Color** and **Sketch** (clipped to the mask), and **Mask N** (white panel
 shape).
 
+Balloons go in a **Letters** group on top: one **Balloon N** group each,
+with live text (the preset's font, size and leading, centred, the hub's line
+breaks) over a shape layer.
+
 Hand-cut panels (slanted cuts, rounded corners) come in as real polygon shape
 layers, editable with the Direct Selection tool. Each inset gets an
 **Inset N** group above the other frames: its frames, and under them an

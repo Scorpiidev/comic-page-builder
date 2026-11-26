@@ -106,9 +106,85 @@
             var id = attr(m[0], "id");
             if (!id || id.indexOf("cpb-") !== 0) continue;
             var g = groups.length ? groups[groups.length - 1] : { id: "", label: "" };
-            out.push({ id: id, group: g.id, label: g.label, key: fingerprint(m[0]) });
+            var whole = m[0];
+            // A text's words and line positions live inside it, not in its
+            // tag, so they go into the fingerprint too.
+            if (name === "text" && !empty) {
+                var end = text.indexOf("</text>", re.lastIndex);
+                if (end > 0) { whole = text.slice(m.index, end); re.lastIndex = end; }
+            }
+            out.push({ id: id, group: g.id, label: g.label, key: fingerprint(whole) });
         }
         return out;
+    }
+
+    function unescapeXml(s) {
+        return s.replace(/&#10;/g, "\n").replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+    }
+
+    // What each balloon's text should be, read from page.svg: its lines,
+    // where the first baseline sits (mm), and the font by PostScript name.
+    // Keyed by the text's id, "cpb-balloon-3-text".
+    function balloonTexts(text) {
+        var out = {}, re = /<g\b[^>]*id="cpb-balloon-\d+"[^>]*>[\s\S]*?<\/g>/g, m;
+        while ((m = re.exec(text))) {
+            var gtag = m[0].match(/<g\b[^>]*>/)[0];
+            var font = unescapeXml(attr(gtag, "cpb:font") || "");
+            var t = m[0].match(/<text\b([^>]*)>([\s\S]*?)<\/text>/);
+            if (!t) continue;
+            var id = attr(t[0], "id"), spans = [], s, sre = /<tspan\b([^>]*)>([\s\S]*?)<\/tspan>/g;
+            while ((s = sre.exec(t[2]))) {
+                spans.push({ x: parseFloat(attr(s[0], "x")), y: parseFloat(attr(s[0], "y")), text: unescapeXml(s[2]) });
+            }
+            if (!id || !spans.length) continue;
+            var num = function (k, dflt) { var v = font.match(new RegExp('"' + k + '":([\\d.]+)')); return v ? parseFloat(v[1]) : dflt; };
+            var ps = font.match(/"ps_name":"([^"]*)"/);
+            var size = num("size_pt", 8);
+            var lines = [];
+            for (var i = 0; i < spans.length; i++) lines.push(spans[i].text);
+            out[id] = {
+                lines: lines, x: spans[0].x, y: spans[0].y, size: size, psName: ps ? ps[1] : "",
+                // Baseline to baseline as the hub laid it out, in points.
+                leading: spans.length > 1 ? (spans[1].y - spans[0].y) / MM : size * num("leading", 1.2)
+            };
+        }
+        return out;
+    }
+
+    // Illustrator opens each line (tspan) as its own left-aligned point text
+    // and picks the font by family name only, so "Comic Sans MS" Bold comes in
+    // Regular. Swap each balloon's text for one centred point text in the
+    // preset's exact face. Returns the fonts that aren't installed.
+    function rebuildTexts(doc, info) {
+        var r = doc.artboards[0].artboardRect, named = itemsByName(doc), missing = [];
+        for (var id in info) {
+            var old = named[id], b = info[id];
+            if (!old) continue;
+            var sample = old.typename === "TextFrame" ? old : (old.textFrames && old.textFrames.length ? old.textFrames[0] : null);
+            var tf = doc.textFrames.pointText([r[0] + b.x / MM, r[1] - b.y / MM]);
+            tf.contents = b.lines.join("\r");
+            var ca = tf.textRange.characterAttributes;
+            if (sample) {
+                ca.textFont = sample.textRange.characterAttributes.textFont;
+                ca.fillColor = sample.textRange.characterAttributes.fillColor;
+            }
+            if (b.psName) {
+                try { ca.textFont = app.textFonts.getByName(b.psName); }
+                catch (e) { if (("," + missing.join(",") + ",").indexOf("," + b.psName + ",") < 0) missing.push(b.psName); }
+            }
+            ca.size = b.size;
+            ca.autoLeading = false;
+            ca.leading = b.leading;
+            tf.textRange.paragraphAttributes.justification = Justification.CENTER;
+            tf.move(old, ElementPlacement.PLACEBEFORE);
+            tf.name = old.name;
+            old.remove();
+        }
+        return missing;
+    }
+
+    function fontReport(missing) {
+        return missing.length ? "\nNot installed, so the balloons use a stand-in: " + missing.join(", ") + "." : "";
     }
 
     // "cpb-panel-3" -> "panel 3", "cpb-crop-marks" -> "crop marks", for messages.
@@ -117,15 +193,21 @@
     }
 
     // ---------- notes: how the script recognises its own items ----------
-    function noteFor(id, page, key, hidden) {
-        return NOTE + id + " | page " + page + " | key " + key + (hidden ? " | hidden" : "");
+    // Text items also note a fingerprint of their words as the hub wrote
+    // them, so an update can tell when you've edited them here.
+    function noteFor(id, page, key, hidden, words) {
+        return NOTE + id + " | page " + page + " | key " + key + (hidden ? " | hidden" : "") + (words ? " | words " + words : "");
+    }
+
+    function wordsOf(item) {
+        return item.typename === "TextFrame" ? fingerprint(String(item.contents)) : "";
     }
 
     function readNote(item) {
         var note = "";
         try { note = String(item.note || ""); } catch (e) {}
-        var m = note.match(/^Comic Page Builder: (cpb-[\w-]+) \| page (\d+) \| key (\w+)( \| hidden)?/);
-        return m ? { id: m[1], page: m[2], key: m[3], hidden: !!m[4], item: item } : null;
+        var m = note.match(/^Comic Page Builder: (cpb-[\w-]+) \| page (\d+) \| key (\w+)( \| hidden)?( \| words (\w+))?/);
+        return m ? { id: m[1], page: m[2], key: m[3], hidden: !!m[4], words: m[6] || "", item: item } : null;
     }
 
     // The hub's items in doc, by id. A duplicated item copies its note, so
@@ -188,16 +270,17 @@
     }
 
     // ---------- new document ----------
-    function importFresh(file, page, elements) {
+    function importFresh(file, page, elements, texts) {
         var doc = app.open(file);
         var report = [];
+        var missing = rebuildTexts(doc, texts);
         var created = {};
 
         // Tag the hub's items first, while they still have their SVG ids as names.
         var named = itemsByName(doc);
         for (var e = 0; e < elements.length; e++) {
             var hub = named[elements[e].id] || null;
-            if (hub) hub.note = noteFor(elements[e].id, page, elements[e].key, false);
+            if (hub) hub.note = noteFor(elements[e].id, page, elements[e].key, false, wordsOf(hub));
             else report.push("Couldn't find " + elements[e].id + " (Illustrator may not have kept the id).");
         }
 
@@ -224,6 +307,8 @@
         for (var k = 0; k < panels.pageItems.length; k++) {
             var m = norm(panels.pageItems[k].name).match(/^cpb-panel-(\d+)$/);
             if (m) { panels.pageItems[k].name = "Panel " + m[1]; count++; }
+            var g = norm(panels.pageItems[k].name).match(/^cpb-inset-gap-(\d+)$/);
+            if (g) panels.pageItems[k].name = "Inset gap " + g[1];
         }
 
         // Remove layers that are now empty (Illustrator's own "Layer 1").
@@ -242,18 +327,19 @@
 
         // Illustrator would save this document back over the hub's SVG as its own SVG.
         return "Imported " + file.name + ": " + count + " panels.\n" +
-            (report.length ? "\n" + report.join("\n") : "Layers: Guides, Letters, Panels, Paper.") +
+            (report.length ? "\n" + report.join("\n") : "Layers: Guides, Letters, Panels, Paper.") + fontReport(missing) +
             "\n\nSave it as an .ai file (File > Save As) before you letter, so " + file.name + " stays the hub's.";
     }
 
     // ---------- update an existing document ----------
-    function update(doc, file, page, elements, tagged) {
+    function update(doc, file, page, elements, tagged, texts) {
         // Open the new page from a temporary copy. If this document IS that
         // page.svg (never saved as .ai), opening the file again would just hand
         // back this document, and closing it afterwards would close your work.
         var tmp = new File(Folder.temp + "/cpb-update-" + new Date().getTime() + ".svg");
         if (!file.copy(tmp)) throw new Error("Couldn't copy " + file.name + " to a temporary file.");
         var src = app.open(tmp);
+        var missing = rebuildTexts(src, texts);
         var fresh = itemsByName(src); // while src is the active document (see itemsByName)
         var touched = []; // layers unlocked or shown for the update, with their old state
 
@@ -298,7 +384,7 @@
             if (locked) was.locked = false;
             was.remove();
             if (clip) copy.clipping = true;
-            copy.note = noteFor(e.id, page, e.key, false);
+            copy.note = noteFor(e.id, page, e.key, false, wordsOf(copy));
             copy.hidden = hidden;
             copy.locked = locked;
             return copy;
@@ -327,7 +413,9 @@
             else if (after) copy.move(after, ElementPlacement.PLACEAFTER);
             var m = e.id.match(/^cpb-panel-(\d+)$/);
             if (m) copy.name = "Panel " + m[1];
-            copy.note = noteFor(e.id, page, e.key, false);
+            var g = e.id.match(/^cpb-inset-gap-(\d+)$/);
+            if (g) copy.name = "Inset gap " + g[1];
+            copy.note = noteFor(e.id, page, e.key, false, wordsOf(copy));
             return copy;
         }
 
@@ -341,20 +429,31 @@
             var dx = a[0] - b[0], dy = a[1] - b[1];
             app.activeDocument = doc;
 
-            var done = { redrawn: [], added: [], shown: [], hidden: [], missing: [] }, wanted = {};
+            var done = { redrawn: [], added: [], shown: [], hidden: [], missing: [], kept: [] }, wanted = {};
             for (var i = 0; i < elements.length; i++) {
                 var e = elements[i], old = tagged[e.id];
                 wanted[e.id] = true;
                 if (old && old.key === e.key) {
                     if (old.hidden) {
-                        edit(old.item, function (it) { it.hidden = false; it.note = noteFor(e.id, page, e.key, false); });
+                        edit(old.item, function (it) { it.hidden = false; it.note = noteFor(e.id, page, e.key, false, old.words); });
                         done.shown.push(said(e.id));
                     }
                     continue;
                 }
                 var f = fresh[e.id] || null;
                 if (!f) { done.missing.push(e.id); continue; }
-                if (old) {
+                if (old && old.words && old.item.typename === "TextFrame" && wordsOf(old.item) !== old.words) {
+                    // You edited this text here and the hub changed it too:
+                    // keep yours (hidden, and no longer the hub's) under the new one.
+                    var mine = old.item, itsName = mine.name;
+                    edit(mine, function (it) { it.hidden = true; it.note = ""; it.name = "Your edit of " + said(e.id); });
+                    var put = copyIn(f, mine.layer);
+                    put.move(mine, ElementPlacement.PLACEBEFORE);
+                    put.name = itsName;
+                    put.note = noteFor(e.id, page, e.key, false, wordsOf(put));
+                    tagged[e.id] = { id: e.id, key: e.key, hidden: false, item: put };
+                    done.kept.push(said(e.id));
+                } else if (old) {
                     tagged[e.id] = { id: e.id, key: e.key, hidden: false, item: replace(old, f, e) };
                     done.redrawn.push(said(e.id));
                 } else {
@@ -367,7 +466,7 @@
             for (var id in tagged) {
                 var t = tagged[id];
                 if (wanted[id] || t.hidden) continue;
-                edit(t.item, function (it) { it.hidden = true; it.note = noteFor(t.id, page, t.key, true); });
+                edit(t.item, function (it) { it.hidden = true; it.note = noteFor(t.id, page, t.key, true, t.words); });
                 done.hidden.push(said(id));
             }
         } finally {
@@ -385,6 +484,9 @@
         if (done.added.length) lines.push("New: " + done.added.join(", ") + ".");
         if (done.shown.length) lines.push("Shown again: " + done.shown.join(", ") + ".");
         if (done.hidden.length) lines.push("Hidden (gone from the layout, kept): " + done.hidden.join(", ") + ".");
+        if (done.kept.length) lines.push("Edited here and changed in the hub: " + done.kept.join(", ") +
+            ". Your version is kept, hidden, right under the new one (named \"Your edit of …\").");
+        if (missing.length) lines.push(fontReport(missing).slice(1));
         if (done.missing.length) lines.push("Couldn't find in the new page: " + done.missing.join(", ") + ".");
         if (!lines.length) return doc.name + " already matches " + file.name + ". Nothing changed.";
         doc.selection = null;
@@ -416,6 +518,7 @@
         return;
     }
     var elements = hubElements(text);
+    var texts = balloonTexts(text);
 
     try {
         var doc = app.documents.length ? app.activeDocument : null;
@@ -430,7 +533,7 @@
             if (problem) { alert(problem); return; }
             var risk = undoRisk(doc);
             if (risk && !confirm(risk + "\n\nUpdate anyway?")) return;
-            alert(update(doc, file, page, elements, tags.byId));
+            alert(update(doc, file, page, elements, tags.byId, texts));
         } else if (doc && openDocumentFor(file) === doc) {
             // Opening it again would hand back this document and re-sort its layers.
             alert(doc.name + " has no Comic Page Builder notes (it was imported before updates existed), " +
@@ -439,7 +542,7 @@
             alert(file.name + " is already open in Illustrator.\n\n" +
                   "To update it, switch to it and run the script again. To import it fresh, close it first.");
         } else {
-            alert(importFresh(file, page, elements));
+            alert(importFresh(file, page, elements, texts));
         }
     } catch (err) {
         alert("Comic Page Builder import failed:\n" + err.message + (err.line ? " (line " + err.line + ")" : ""));
