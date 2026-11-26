@@ -2,7 +2,7 @@
 
 Scripts that turn a hub `page.svg` into native layers in each app. They only
 read the file; they never compute geometry (every panel carries its final
-rectangle in `cpb:rect`).
+rectangle in `cpb:rect`, and a hand-cut panel also its outline in `d`).
 
 Make a test page first, from the repository root:
 
@@ -24,6 +24,12 @@ trim and safe area, and a white Background.
 Inside each frame: **Border N** (shape layer, editable stroke), **Ink**,
 **Color** and **Sketch** (clipped to the mask), and **Mask N** (white panel
 shape).
+
+Hand-cut panels (slanted cuts, rounded corners) come in as real polygon shape
+layers, editable with the Direct Selection tool. Each inset gets an
+**Inset N** group above the other frames: its frames, and under them an
+**Inset gap** shape, the paper-coloured band that keeps the panels behind
+from touching it.
 
 ### Updating a page you've already drawn on
 

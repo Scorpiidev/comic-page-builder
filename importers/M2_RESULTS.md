@@ -379,6 +379,54 @@ Results:
 **Not covered:** balloons (`cpb-letters`) are still empty until M5. When they
 exist, their groups will need the same notes.
 
+## After M5 started: hand-cut panels in Photoshop (2026-11-26)
+
+The layout builder's panels are polygons, but `import_page.psjs` built
+rectangle frames from `cpb:rect`, so slanted panels came in as their
+bounding boxes.
+
+**Smart objects or native shapes?** Ivón suggested placing the SVG as a smart
+object. A probe showed `make contentLayer` also takes a `pathClass` shape (a
+list of anchors with curve handles), so frames stay ordinary shape layers:
+stroke editable in Properties, editable with Direct Selection, and nothing
+hidden inside a .psb for CSP to flatten. Smart objects stay the fallback.
+
+**What changed** (`photoshop/import_page.psjs`):
+- A panel with `cpb:points` takes its outline from its `d`, which the hub
+  writes with M/L/H/V/C/Z only, so rounded corners arrive as the hub drew
+  them. `parsePath` turns it into Photoshop path points; any other command
+  stops the import with an error instead of giving a wrong shape.
+- Insets: an **Inset N** group above the ordinary frames, holding its frames
+  and an **Inset gap** shape (white fill and white stroke, from
+  `cpb-inset-gap-N`). Without that, an inset could sit under a neighbour's
+  white mask, because frames are stacked by panel number.
+- Updates keep inset groups in line: missing groups are made, gaps are
+  redrawn, added or removed ("Gap around insets" off), frames move in or out
+  of an inset when their number changes sides, and a group is only deleted
+  once it's empty.
+- The frame key only gains the outline for polygons, so documents imported
+  before this change aren't redrawn for nothing.
+
+**Test** (Photoshop 27.4, harness as before; results read back over COM, with
+PNG exports):
+1. Fresh import of a hand-cut page (3 slanted cuts plus an inset, 2.5 mm
+   corners, and the same page with sharp corners). It matches the hub's
+   render, gap included. Art painted into Frame 3, 2 and the inset clipped to
+   the slanted, rounded outlines.
+2. Updates on that document: the inset moved and a cut added (frames 3–5
+   redrawn, 6 added, the inset group's frames swapped); same file again:
+   "Nothing changed"; gap off: gap removed; inset removed: empty group
+   deleted, extra frames hidden; back to the first layout: group, gap and
+   frames restored. The art was identical after all five.
+3. A BSP page imported with the previous script, then updated with this one:
+   "already matches … Nothing changed".
+
+**Bug found while testing (fixed):** the gap rectangle is written with H/V,
+which the first parser silently skipped, drawing a wrong gap.
+
+**Not tested yet:** Illustrator with hand-cut pages and insets. Its script
+copies every `cpb-` item from the SVG, so it should work.
+
 ## Files changed
 
 - `importers/photoshop/import_page.psjs`: top-level `await`; Border made

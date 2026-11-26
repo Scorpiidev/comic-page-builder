@@ -133,7 +133,7 @@ Photoshop, Illustrator and Krita. The plan and every decision live in
     importer would need polygon frames. Until then the hub still defaults to
     random layouts (Layout options' first tab, Add page, wizard pages).
   - **Layout builder prototype, branch `layout-builder-prototype`
-    (2026-11-25), not merged:** `core/cpb_core/layouts/knife.py` (split tree
+    (2026-11-25), merged into main 2026-11-26:** `core/cpb_core/layouts/knife.py` (split tree
     with cuts at any angle, convex polygons, per-edge gutters, insets with a
     paper halo, presets/random layouts convert to a cut tree) and the Page
     builder's Select / Knife / Inset panel / Merge tools with undo
@@ -145,9 +145,11 @@ Photoshop, Illustrator and Krita. The plan and every decision live in
     defaults** in the builder's side panel puts size, style and gutter back
     to Project settings (one undo step; the layout stays). Blank pages and Add page now
     default to a blank hand-cut page; Layout options opens on Presets.
-    **Known gap:** the Photoshop importer still builds rectangle frames
-    from `cpb:rect`, so slanted panels come in as their bounding boxes;
-    it needs to use `cpb:points`. Illustrator reads the paths, so it should be fine.
+    **Merged into main 2026-11-26** (Ivón liked it). The Photoshop importer
+    now builds polygon frames from each panel's `d` and puts insets in
+    their own group with a paper-coloured gap shape (tested 2026-11-26, see
+    `importers/M2_RESULTS.md`). Illustrator with hand-cut pages is still
+    untested.
   - Next: letters (and art) in the PS and AI importers,
     then test in the real apps (open question 2 in DESIGN.md §15). Nice to
     have: zoom on the balloon canvas, undo.

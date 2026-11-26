@@ -64,6 +64,11 @@ function readPage(text) {
     const [x, y, w, h] = a["cpb:rect"].trim().split(/\s+/).map(Number);
     page.panels.push({
       index: Number(a["cpb:index"]), x, y, w, h,
+      // Hand-cut panels are polygons: take the outline the hub drew (rounded
+      // corners included) instead of the bounding box in cpb:rect.
+      d: a["cpb:points"] ? a.d : null,
+      outline: a["cpb:points"] ? parsePath(a.d) : null,
+      inset: a["cpb:inset"] ? Number(a["cpb:inset"]) : 0,
       stroke: a.stroke || "#1b1b1b",
       strokeWidth: parseFloat(a["stroke-width"] || "0.6"),
       fill: a.fill && a.fill !== "none" ? a.fill : null,
@@ -71,7 +76,50 @@ function readPage(text) {
   }
   if (!page.panels.length) throw new Error("The page has no panels.");
   page.panels.sort((p, q) => p.index - q.index);
+
+  // The paper-coloured band around each inset, so what's behind stops short of it.
+  page.gaps = [];
+  const gapRe = /<path\b[^>]*id="cpb-inset-gap-\d+"[^>]*>/g;
+  while ((m = gapRe.exec(text))) {
+    const a = attrs(m[0]);
+    page.gaps.push({ n: Number(a.id.split("-").pop()), d: a.d, outline: parsePath(a.d),
+      color: a.fill || "#ffffff", width: parseFloat(a["stroke-width"] || "0") });
+  }
   return page;
+}
+
+// An SVG path made of M/L/H/V/C/Z (absolute), the only commands the hub writes,
+// as a list of anchors in mm. A curve's first handle belongs to the anchor
+// before it ("forward"), its second to the anchor it ends on ("backward"),
+// which is how Photoshop stores path points.
+function parsePath(d) {
+  // Any letter is a token, so a command we don't know stops the import
+  // instead of being skipped and leaving a wrong shape.
+  const tokens = d.match(/[a-z]|-?\d*\.?\d+(?:e[-+]?\d+)?/gi) || [];
+  const pts = [];
+  let i = 0, cmd = null;
+  const next = () => Number(tokens[i++]);
+  const xy = () => ({ x: next(), y: next() });
+  while (i < tokens.length) {
+    if (/[a-z]/i.test(tokens[i])) cmd = tokens[i++];
+    if (cmd === "Z") continue;
+    const prev = pts[pts.length - 1];
+    if (cmd === "M" || cmd === "L") pts.push(xy());
+    else if (cmd === "H") pts.push({ x: next(), y: prev.y });
+    else if (cmd === "V") pts.push({ x: prev.x, y: next() });
+    else if (cmd === "C") {
+      const c1 = xy(), c2 = xy(), p = xy();
+      prev.forward = c1;
+      pts.push({ ...p, backward: c2 });
+    } else throw new Error("Unexpected path command " + cmd + " in a panel outline.");
+  }
+  // A rounded outline ends on its starting point: fold that duplicate back in.
+  const first = pts[0], last = pts[pts.length - 1];
+  if (pts.length > 1 && Math.abs(first.x - last.x) < 1e-6 && Math.abs(first.y - last.y) < 1e-6) {
+    if (last.backward) first.backward = last.backward;
+    pts.pop();
+  }
+  return pts;
 }
 
 // ---------- helpers ----------
@@ -96,14 +144,45 @@ function rectShape(r, radius) {
   return shape;
 }
 
-const frameRect = (p, d) => ({ left: px(p.x, d), top: px(p.y, d), right: px(p.x + p.w, d), bottom: px(p.y + p.h, d) });
+// Where a frame goes, in pixels: a rectangle, plus the outline for polygons.
+const frameRect = (p, d) => ({ left: px(p.x, d), top: px(p.y, d), right: px(p.x + p.w, d), bottom: px(p.y + p.h, d),
+  outline: p.outline ? p.outline.map((q) => scalePoint(q, d)) : null });
+const scalePoint = (q, d) => {
+  const s = (v) => v && { x: px(v.x, d), y: px(v.y, d) };
+  return { x: px(q.x, d), y: px(q.y, d), forward: s(q.forward), backward: s(q.backward) };
+};
+
+// A closed path for a shape layer. Corners are rounded already (the hub draws
+// them as curves), so there's no radius here.
+function pathShape(points) {
+  const paint = (v) => ({ _obj: "paint", horizontal: unit(v.x), vertical: unit(v.y) });
+  return {
+    _obj: "pathClass",
+    pathComponents: [{
+      _obj: "pathComponent",
+      shapeOperation: { _enum: "shapeOperation", _value: "add" },
+      subpathListKey: [{
+        _obj: "subpathsList", closedSubpath: true,
+        points: points.map((q) => {
+          const pt = { _obj: "pathPoint", anchor: paint(q) };
+          if (q.forward) pt.forward = paint(q.forward);
+          if (q.backward) pt.backward = paint(q.backward);
+          return pt;
+        }),
+      }],
+    }],
+  };
+}
 const maskStyle = (page, p) => ({ fill: p.fill || "#ffffff", stroke: null, radius: px(page.radius, page.dpi) });
 const borderStyle = (page, p) => ({ fill: null, stroke: p.stroke, strokeWidth: px(p.strokeWidth, page.dpi), radius: px(page.radius, page.dpi) });
 // Everything that decides how a frame looks. Same key = nothing to redraw,
 // so running the script twice in a row changes nothing.
-const frameKey = (page, p) => [p.x, p.y, p.w, p.h, p.stroke, p.strokeWidth, p.fill || "none", page.radius].join(" ");
+// The outline is only added for polygons, so frames imported before polygons
+// existed keep their key and aren't redrawn for nothing.
+const frameKey = (page, p) => [p.x, p.y, p.w, p.h, p.stroke, p.strokeWidth, p.fill || "none", page.radius]
+  .concat(p.d ? [p.d] : []).join(" ");
 
-// One shape layer (rectangle), made above the selected layer. `fill` and
+// One shape layer (rectangle or polygon), made above the selected layer. `fill` and
 // `stroke` are hex colours or null.
 async function makeShape(name, r, { fill, stroke, strokeWidth, radius }) {
   const strokeStyle = {
@@ -126,7 +205,7 @@ async function makeShape(name, r, { fill, stroke, strokeWidth, radius }) {
     using: {
       _obj: "contentLayer",
       type: { _obj: "solidColorLayer", color: rgb(fill || "#ffffff") },
-      shape: rectShape(r, radius),
+      shape: r.outline ? pathShape(r.outline) : rectShape(r, radius),
       strokeStyle,
     },
   }], {});
@@ -269,6 +348,103 @@ function removeGuides(doc, text) {
   }
 }
 
+// ---------- insets ----------
+// Each inset is a group above the ordinary frames: its frames, and under them
+// an "Inset gap" shape, a paper-coloured band that hides what's behind.
+const insetNumbers = (page) => [...new Set(page.panels.filter((p) => p.inset).map((p) => p.inset))].sort((a, b) => a - b);
+const gapRect = (page, g) => ({ outline: g.outline.map((q) => scalePoint(q, page.dpi)) });
+const gapStyle = (page, g) => ({ fill: g.color, stroke: g.color, strokeWidth: px(g.width, page.dpi), radius: 0 });
+const gapKey = (g) => [g.d, g.color, g.width].join(" ");
+
+async function makeGap(page, g) {
+  const layer = await makeShape("Inset gap", gapRect(page, g), gapStyle(page, g));
+  await setTag(layer, { id: `cpb-inset-gap-${g.n}`, key: gapKey(g) });
+  return layer;
+}
+
+async function buildInset(doc, page, n) {
+  const layers = [];
+  const gap = page.gaps.find((g) => g.n === n);
+  if (gap) layers.push(await makeGap(page, gap));
+  for (const p of page.panels.filter((q) => q.inset === n).reverse()) layers.push(await buildFrame(doc, page, p));
+  const group = await doc.createLayerGroup({ name: `Inset ${n}`, fromLayers: layers });
+  await setTag(group, { id: `cpb-inset-${n}` });
+  return group;
+}
+
+const parentId = (layer) => (layer.parent ? layer.parent.id : null);
+
+// Brings the inset groups in line with the page after an update: makes
+// missing groups, redraws or adds gaps, moves frames in or out of their inset
+// (a panel's number can change insets when the layout changes), and removes
+// the gap of an inset that left. A group is only deleted once it's empty, so
+// layers you put in it stay.
+async function syncInsets(doc, page, tagged, comicFrames, done) {
+  const wanted = insetNumbers(page);
+  for (const n of wanted) {
+    const box = tagged.get(`cpb-inset-${n}`).layer;
+    const g = page.gaps.find((q) => q.n === n);
+    const old = tagged.get(`cpb-inset-gap-${n}`);
+    if (g && old && old.tag.key !== gapKey(g)) {
+      const fresh = await replaceShape(old.layer, gapRect(page, g), gapStyle(page, g), `cpb-inset-gap-${n}`);
+      await setTag(fresh, { id: `cpb-inset-gap-${n}`, key: gapKey(g) });
+      done.insets.add(n);
+    } else if (g && !old) {
+      await selectLayer(box);
+      const layer = await makeGap(page, g);
+      const kids = box.layers || [];
+      if (kids.length > 1) layer.move(kids[kids.length - 1], PLACEAFTER); else layer.move(box, PLACEINSIDE);
+      unclip(layer);
+      done.insets.add(n);
+    } else if (!g && old) {
+      old.layer.delete(); // "Gap around insets" was turned off
+      done.insets.add(n);
+    }
+  }
+  for (const p of page.panels) {
+    const frame = tagged.get(`cpb-frame-${p.index}`).layer;
+    const box = p.inset ? tagged.get(`cpb-inset-${p.inset}`).layer : comicFrames;
+    if (parentId(frame) !== box.id) { await placeFrame(frame, p, page, tagged, comicFrames); done.insets.add(p.inset || "moved"); }
+  }
+  for (const [id, t] of [...tagged]) {
+    const m = id.match(/^cpb-inset-(\d+)$/);
+    if (!m || wanted.includes(Number(m[1]))) continue;
+    const gap = tagged.get(`cpb-inset-gap-${m[1]}`);
+    if (gap) { gap.layer.delete(); tagged.delete(`cpb-inset-gap-${m[1]}`); }
+    if (!(t.layer.layers || []).length) { t.layer.delete(); tagged.delete(id); }
+  }
+}
+
+// An inset that's new on this page: an empty group on top of Comic Frames.
+async function addInsetGroups(doc, page, tagged, comicFrames) {
+  for (const n of insetNumbers(page)) {
+    if (tagged.has(`cpb-inset-${n}`)) continue;
+    await selectLayer(comicFrames);
+    const group = await doc.createLayerGroup({ name: `Inset ${n}` });
+    group.move(comicFrames, PLACEINSIDE);
+    await setTag(group, { id: `cpb-inset-${n}` });
+    tagged.set(`cpb-inset-${n}`, { layer: group, tag: { id: `cpb-inset-${n}` } });
+  }
+}
+
+// Puts a frame group in its place: inside its inset group, or among the
+// ordinary frames, in reading order between its neighbours.
+async function placeFrame(group, p, page, tagged, comicFrames) {
+  const box = p.inset ? tagged.get(`cpb-inset-${p.inset}`).layer : comicFrames;
+  const frameOf = (q) => tagged.get(`cpb-frame-${q.index}`);
+  const here = (q) => q.index !== p.index && q.inset === p.inset && frameOf(q) && parentId(frameOf(q).layer) === box.id;
+  const before = page.panels.filter((q) => q.index < p.index && here(q)).pop();
+  const after = page.panels.find((q) => q.index > p.index && here(q));
+  if (before) group.move(frameOf(before).layer, PLACEAFTER);
+  else if (after) group.move(frameOf(after).layer, PLACEBEFORE);
+  else if (p.inset) group.move(box, PLACEINSIDE); // top of the inset, above its gap
+  else {
+    // Below the inset groups, which have to stay on top.
+    const kids = (comicFrames.layers || []).filter((l) => l.id !== group.id);
+    if (kids.length) group.move(kids[kids.length - 1], PLACEAFTER); else group.move(comicFrames, PLACEINSIDE);
+  }
+}
+
 // ---------- new document ----------
 async function buildDocument(page, fileName) {
   const d = page.dpi;
@@ -283,7 +459,9 @@ async function buildDocument(page, fileName) {
   addGuides(doc, guides);
   const frames = [];
   // Build the last panel first so Frame 1 ends up at the top of the Layers panel.
-  for (const p of [...page.panels].reverse()) frames.push(await buildFrame(doc, page, p));
+  for (const p of page.panels.filter((q) => !q.inset).reverse()) frames.push(await buildFrame(doc, page, p));
+  // Insets last, so they sit above the panels they overlap (the hub paints them last too).
+  for (const n of insetNumbers(page)) frames.push(await buildInset(doc, page, n));
   const group = await doc.createLayerGroup({ name: "Comic Frames", fromLayers: frames });
   await setTag(group, { id: "cpb-frames", page: page.number, guides });
   return `Imported ${fileName}: ${page.panels.length} panels on a ${page.canvasW} × ${page.canvasH} mm ` +
@@ -306,7 +484,8 @@ function sizeProblem(doc, page) {
 async function updateDocument(doc, page, tagged, fileName) {
   const d = page.dpi;
   const frames = tagged.get("cpb-frames");
-  const done = { redrawn: [], added: [], hidden: [], shown: [] };
+  const done = { redrawn: [], added: [], hidden: [], shown: [], insets: new Set() };
+  await addInsetGroups(doc, page, tagged, frames.layer);
 
   for (const p of page.panels) {
     const frame = tagged.get(`cpb-frame-${p.index}`);
@@ -330,6 +509,8 @@ async function updateDocument(doc, page, tagged, fileName) {
     if (frame.tag.key !== key || wasHidden) await setTag(frame.layer, { id: frame.tag.id, key });
   }
 
+  await syncInsets(doc, page, tagged, frames.layer, done);
+
   // Frames whose panel left the layout: hidden, never deleted, so no art is lost.
   const wanted = new Set(page.panels.map((p) => `cpb-frame-${p.index}`));
   for (const [id, t] of tagged) {
@@ -352,6 +533,7 @@ async function updateDocument(doc, page, tagged, fileName) {
   if (done.redrawn.length) lines.push(`Moved or redrawn: frames ${done.redrawn.join(", ")}.`);
   if (done.added.length) lines.push(`New frames: ${done.added.join(", ")}.`);
   if (done.shown.length) lines.push(`Shown again: frames ${done.shown.join(", ")}.`);
+  if (done.insets.size) lines.push("Rearranged the inset groups.");
   if (done.hidden.length) lines.push(`Hidden (their panel left the layout; art kept): ${done.hidden.join(", ")}.`);
   if (!lines.length && guides === frames.tag.guides) return `${doc.name} already matches ${fileName}. Nothing changed.`;
   if (!lines.length) lines.push("Moved the trim and safe guides.");
@@ -359,16 +541,11 @@ async function updateDocument(doc, page, tagged, fileName) {
     "Art layers weren't touched. Ctrl+Z undoes the whole update.";
 }
 
-// A panel with no frame yet: build it, then slot it under the frame before it
-// in reading order (or above the one after it), so the stack stays in order.
+// A panel with no frame yet: build it, then slot it in (see placeFrame).
 async function addFrame(doc, page, p, tagged, comicFrames) {
   await selectLayer(comicFrames);
   const group = await buildFrame(doc, page, p);
-  const before = page.panels.filter((q) => q.index < p.index && tagged.has(`cpb-frame-${q.index}`)).pop();
-  const after = page.panels.find((q) => q.index > p.index && tagged.has(`cpb-frame-${q.index}`));
-  if (before) group.move(tagged.get(`cpb-frame-${before.index}`).layer, PLACEAFTER);
-  else if (after) group.move(tagged.get(`cpb-frame-${after.index}`).layer, PLACEBEFORE);
-  else group.move(comicFrames, PLACEINSIDE);
+  await placeFrame(group, p, page, tagged, comicFrames);
   tagged.set(`cpb-frame-${p.index}`, { layer: group, tag: { id: `cpb-frame-${p.index}` } });
 }
 
