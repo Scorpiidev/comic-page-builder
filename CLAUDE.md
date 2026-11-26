@@ -183,6 +183,14 @@ Photoshop, Illustrator and Krita. The plan and every decision live in
     SFX are listed, not made into balloons. The script is copied into
     script/ and recopied when the original is newer.
     Not yet: the M7 pages board / "which pages each scene covers".
+    **Reader tuned on ~250 published scripts (2026-11-26)** from Ivón's
+    E:\comicscripts and E:\Downloaded Comic Scripts: "PAGE ONE PANEL 1",
+    "P1/", "1.1", "1)" / "[1]" panels, "PANEL A", balloon numbers ("1 SARA:",
+    "JOHNNY 1:"), "DAVE;", running headers/footers and sheet numbers ("Page 3"
+    at the foot of each typed sheet vs the story's "PAGE TWO"), outlines
+    before the script, "NO DIALOGUE". About 200 of 255 read cleanly; the rest
+    are plots, proposals, OCR junk or colon-less all-caps dialogue. Old .doc
+    and DRM'd .epub aren't readable: save as .docx/.txt/.pdf.
   - Lettering drawn pages in the hub already works (D7); what's missing is
     exporting a lettered page (art + balloons) without PS/AI.
   - Next: Ivón tries the Script screen on a real script of hers; then M4's

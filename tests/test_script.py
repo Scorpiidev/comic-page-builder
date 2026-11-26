@@ -248,3 +248,112 @@ def test_project_remembers_its_script(tmp_path):
     project.script = {"file": "script/s.txt", "first_page": 1, "not_speakers": ["background"]}
     project.save()
     assert load_project(project.folder).script["not_speakers"] == ["background"]
+
+
+
+# ---------- layouts from published scripts (written fresh, the shapes only) ----------
+
+def _speakers(script):
+    return [(ln.speaker, ln.kind, ln.text) for p in script.pages for ln in p.lines()]
+
+
+def test_page_and_panel_on_one_line_and_repeated_headings():
+    s = read_script("PAGE ONE PANEL 1\nA dock.\nMARA: Cold.\n\nPage 1 panel 2\nJUN: Yes.\n\n"
+                    "PAGE ONE, continued\n(PANEL) 3.\nMARA: Go.\n\nPAGE TWO\nPanel 2.1: Close on JUN.\nJUN: Fine.\n")
+    assert [(p.number, [pn.number for pn in p.panels]) for p in s.pages] == [(1, [1, 2, 3]), (2, [1])]
+    assert s.pages[0].panels[0].description == "A dock."
+
+
+def test_running_headers_footers_and_sheet_numbers_are_not_script():
+    sheet = "COLD SNAP #1 / Script / Page {n}\n"
+    text = ("PAGE ONE\nPANEL 1\nMARA: It was cold, and the\n" + sheet.format(n=1) + "wind kept on.\nSam Writer\n\n"
+            "PANEL 2\nJUN: Go.\n" + sheet.format(n=2) + "\nSam Writer\n12\n"
+            "PAGE TWO\nPANEL 1\nMARA: Again.\nSam Writer\nPage 3 of 9\n" + sheet.format(n=3) + "\n"
+            "PAGE THREE\nPANEL 1\nJUN: End.\nSam Writer\nSam Writer\n")
+    s = read_script(text)
+    assert [p.number for p in s.pages] == [1, 2, 3]
+    assert s.pages[0].panels[0].lines[0].text == "It was cold, and the wind kept on."
+    assert all("Sam Writer" not in ln.text and "Script" not in ln.text for _, _, ln in [(0, 0, l) for p in s.pages for l in p.lines()])
+
+
+def test_story_headings_win_over_sheet_numbers():
+    # "Page N" at the foot of each typed sheet runs on its own count.
+    text = ""
+    for story, sheets in ((1, [1]), (2, [2, 3]), (3, [4]), (4, [5, 6])):
+        words = {1: "ONE", 2: "TWO", 3: "THREE", 4: "FOUR"}[story]
+        text += f"PAGE {words}\nPANEL 1\nMARA: Line {story}.\n"
+        for n in sheets:
+            text += f"JUN: More {story}.\nPage {n}\n"
+    s = read_script(text)
+    assert [p.number for p in s.pages] == [1, 2, 3, 4]
+    assert [ln.text for ln in s.pages[1].lines()] == ["Line 2.", "More 2.", "More 2."]
+
+
+def test_page_of_total_is_the_heading_when_there_is_nothing_else():
+    s = read_script("Page 1 of 2\nPanel 1:\nNarration:\nLong ago.\nPage 2 of 2\nPanel 1:\nCROM: Ha!\n")
+    assert [p.number for p in s.pages] == [1, 2]
+    assert s.pages[0].lines()[0].kind == "caption"
+
+
+def test_number_words_spreads_and_bare_page_numbers():
+    s = read_script("PAGE TWENTY-ONE\nPANEL 1\nA: One.\nPAGES TWENTY-TWO & 23\nPANEL 1\nA: Two.\n"
+                    "Page 23\nPANEL 2\nA: Still the spread.\nPAGE TWENTY FOUR\nPANEL 1\nA: Four.\n")
+    assert [p.number for p in s.pages] == [21, 22, 24]
+    assert [pn.number for pn in s.pages[1].panels] == [1, 2]
+    bare = read_script("TITLE\n\nONE\n\nPanel 1: A city.\n\nCAPTION: Here.\n\nTWO - 4 PANELS\n\nPanel 1: A room.\n\nGOD: Hi.\n")
+    assert [p.number for p in bare.pages] == [1, 2]
+
+
+def test_a_sentence_that_starts_with_page_is_not_a_heading():
+    s = read_script("PAGE 1\nPANEL 1\nTHE SAME CITY AS ON\nPAGE ONE, IT LOOKS GRIM AND WINDSWEPT AND DERELICT.\n"
+                    "MARA: Hm.\nPAGE 2\nPANEL 1\nSEE PAGE 9 FOR THE STATUE, WHICH WE WILL COME BACK TO LATER ON.\nJUN: Ok.\n")
+    assert [p.number for p in s.pages] == [1, 2]
+
+
+def test_an_outline_before_the_script_merges_into_the_same_pages():
+    s = read_script("PAGE ONE - 6 PANELS\nMara wakes up.\nPAGE TWO - 4 PANELS\nShe leaves.\n\n"
+                    "PAGE 1 - 6 PANELS\nPANEL 1\nMARA: Morning.\nPAGE 2\nPANEL 1\nMARA: Bye.\n")
+    assert [p.number for p in s.pages] == [1, 2]
+    assert [ln.text for ln in s.pages[0].lines()] == ["Morning."]
+
+
+def test_balloon_numbers_before_and_after_names():
+    s = read_script("PAGE 1\nPANEL 1\n1 MARA: Hi.\n2. JUN (OFF): Yo.\n3 (IN-PANEL) CAPTION: Meanwhile.\n4/MARA: Ok.\n")
+    assert [(ln.speaker, ln.kind) for ln in s.pages[0].lines()] == [
+        ("MARA", "speech"), ("JUN", "speech"), ("", "caption"), ("MARA", "speech")]
+    assert s.pages[0].lines()[2].note == "IN-PANEL"
+    counted = read_script("PAGE 1\nPANEL 1\nJOHNNY 1: A.\nNATALIE 2: B.\nPANEL 2\nNATALIE 1: C.\nJOHNNY 2: D.\n"
+                          "PANEL 3\nGUARD 1: Halt.\nGUARD 2: Who goes?\n")
+    assert [ln.speaker for ln in counted.pages[0].lines()] == ["JOHNNY", "NATALIE", "NATALIE", "JOHNNY", "GUARD", "GUARD"]
+    alone = read_script("PAGE 1\nPANEL 1\nGUARD 1: Halt.\nGUARD 2: Who goes?\n")
+    assert [ln.speaker for ln in alone.pages[0].lines()] == ["GUARD 1", "GUARD 2"]  # two guards, not balloon numbers
+
+
+def test_short_and_numbered_panel_headings():
+    s = read_script("PAGE ONE\n\nP1/ CLOSE ON DAVE.\n\nDAVE; Don't look.\n\nP2/ WIDER.\n\nFLOP; Look!\n")
+    assert [(pn.number, pn.description) for pn in s.pages[0].panels] == [(1, "CLOSE ON DAVE."), (2, "WIDER.")]
+    assert [ln.speaker for ln in s.pages[0].lines()] == ["DAVE", "FLOP"]
+    dotted = read_script("PAGE 1\n\n1.1\n\nA river at night.\n\nNO DIALOGUE.\n\n1.2\n\nKIRK: Run.\n")
+    assert [pn.number for pn in dotted.pages[0].panels] == [1, 2] and len(dotted.pages[0].lines()) == 1
+    paras = read_script("PAGE ONE\n\n1) We open on a bench outside the office.\n\n"
+                        "2) A long narrow panel of Steve.\n\nSTEVE: Here goes.\n\n[3] BIG PANEL.\n")
+    assert [pn.number for pn in paras.pages[0].panels] == [1, 2, 3]
+    lettered = read_script("PAGE 1\nPANEL A: Wide.\nROSS: Now.\nPANEL B:\nDOC: Later.\nPic 3\nROSS: Fine.\n")
+    assert [pn.number for pn in lettered.pages[0].panels] == [1, 2, 3]
+
+
+def test_label_words_seen_in_published_scripts():
+    s = read_script("PAGE 1\nPANEL 1\nJACKIE CAPTION: I remember.\nCAPTION - SHADOWMAN: Night.\nDialog: Who's there?\n"
+                    "THORSTEIN DIALOG: Me.\nOFF PANEL: Do it.\nSPX: BLAM\nF.X. (BLAST): BOOM\nSilent panel\nCUT TO: the door.\n")
+    lines = s.pages[0].lines()
+    assert [(ln.kind, ln.speaker) for ln in lines] == [
+        ("caption", ""), ("caption", ""), ("speech", ""), ("speech", "THORSTEIN"), ("speech", "OFF PANEL"),
+        ("sfx", ""), ("sfx", ""), ("speech", "CUT TO")]
+    assert lines[0].label == "jackie caption"
+    assert s.likely_speaker("off panel") and not s.likely_speaker("cut to")
+
+
+def test_names_inside_capital_letter_description_are_not_labels():
+    s = read_script("PAGE 1\nPANEL 1\nNOW WE CHANGE ANGLE SO THAT WE SEE THE CAR, AS\nGORDON STEPS OUT OF IT INTO THE RAIN.\n"
+                    "GORDON IS STRUGGLING ALONG BEHIND THE OTHERS NOW.\nGORDON: Wait for me.\n")
+    assert _speakers(s) == [("GORDON", "speech", "Wait for me.")]

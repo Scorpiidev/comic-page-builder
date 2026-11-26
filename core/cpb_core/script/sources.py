@@ -88,7 +88,12 @@ def _odt_inline(el) -> str:
 
 
 def clean_pdf_text(text: str) -> str:
-    """PDF text comes with page footers like "3" or "Page 3 of 7" on their own lines; drop those."""
-    lines = text.replace("\r\n", "\n").split("\n")
-    keep = [s for s in lines if not re.fullmatch(r"\s*(?:\(?\d{1,3}\)?|page \d+ of \d+|\d+ / \d+)\s*", s, re.I)]
-    return "\n".join(keep)
+    """
+    PDF text comes with page footers like "3" or "3 / 7" on their own lines; drop those.
+    "Page 3 of 7" stays: some scripts head their pages that way, and the
+    reader tells a heading from a footer by the rest of the script.
+    """
+    # The reader drops page numbers itself, and uses them to find the running
+    # headers and footers beside them ("Richard Douek" over every "12"), so
+    # this only evens out line endings.
+    return text.replace("\r\n", "\n")
