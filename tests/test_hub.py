@@ -48,6 +48,7 @@ def window(app, tmp_path):
     app.processEvents()
     yield w
     w.builder.saved = w.builder.draft  # nothing to ask about on close
+    w.balloons_view.saved = tuple(w.balloons_view.balloons)
     w.close()
 
 
@@ -78,6 +79,61 @@ def test_balloons_add_edit_and_save(window, app):
     assert window.save_letters() and not v.dirty
     saved = read_page(window.project.page_path(2)).page.balloons
     assert [x.text for x in saved] == ["WHERE IS THE MAP?"]
+
+
+def test_balloon_undo_groups_drags_typing_and_nudges(window, app):
+    from PySide6.QtCore import QEvent, QPointF, Qt
+    from PySide6.QtGui import QKeyEvent, QMouseEvent
+    window.selected = 1
+    window.go("balloons")
+    v = window.balloons_view
+    assert not v.undo_btn.isEnabled()
+    v.add("speech")
+    c = v.canvas
+    added = v.selected()
+    # A drag in several moves is one step.
+    c.gesture_started.emit()
+    start = c.to_px(QPointF(added.cx, added.cy))
+    c._drag = ("body", c.to_mm(start), added)
+    for dx in (5, 10, 20):
+        p = start + QPointF(dx, 0)
+        c.mouseMoveEvent(QMouseEvent(QEvent.MouseMove, p, p, Qt.LeftButton, Qt.LeftButton, Qt.NoModifier))
+    c._drag = None
+    dragged = v.selected()
+    assert dragged.cx > added.cx
+    # Typing is one step; a run of nudges is one step.
+    v.text.setPlainText("A"); v.text.setPlainText("AB"); v.text.setPlainText("ABC")
+    for _ in range(3):
+        c.keyPressEvent(QKeyEvent(QEvent.KeyPress, Qt.Key_Right, Qt.NoModifier))
+    assert v.selected().cx == pytest.approx(dragged.cx + 1.5)
+    v.undo()   # the nudges
+    assert v.selected().cx == pytest.approx(dragged.cx) and v.selected().text == "ABC"
+    v.undo()   # the typing
+    assert v.selected().text == added.text
+    v.undo()   # the drag
+    assert v.selected().cx == pytest.approx(added.cx)
+    v.undo()   # the add
+    assert v.balloons == [] and not v.undo_btn.isEnabled()
+    v.redo(); v.redo()
+    assert v.selected().cx == pytest.approx(dragged.cx)
+
+
+def test_balloon_canvas_zooms_around_the_cursor(window, app):
+    from PySide6.QtCore import QPointF
+    window.selected = 1
+    window.go("balloons")
+    c = window.balloons_view.canvas
+    c.resize(600, 800)
+    spot = QPointF(200, 300)
+    held = c.to_mm(spot)
+    c.zoom_to(3.0, spot)
+    assert c.zoom == 3.0
+    after = c.to_px(held)
+    assert after.x() == pytest.approx(spot.x(), abs=0.01) and after.y() == pytest.approx(spot.y(), abs=0.01)
+    c.zoom_to(100)
+    assert c.zoom == 12.0   # capped
+    c.fit()
+    assert c.zoom == 1.0 and c.pan == QPointF(0, 0)
 
 
 def test_balloon_keyboard_and_resize(window, app):

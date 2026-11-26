@@ -13,6 +13,10 @@ Body and tail are edited separately (D6):
 - the blue handles are the tail: one on the rim where it leaves the body,
   one at the tip.
 Keyboard: Tab switches body / tail, arrows nudge (Shift: 5 mm), Delete removes.
+Zoom: Ctrl+wheel (around the cursor), Ctrl+= / Ctrl+-, Ctrl+0 fits the page.
+Pan: the wheel (Shift: sideways), middle-drag, or Space+drag.
+Undo: Ctrl+Z / Ctrl+Y. One drag, one stretch of typing or one run of nudges
+is one step.
 """
 
 from __future__ import annotations
@@ -23,14 +27,14 @@ import re
 from dataclasses import replace
 
 from PySide6.QtCore import QByteArray, QPointF, QRectF, Qt, Signal
-from PySide6.QtGui import QColor, QFont, QFontMetricsF, QPainter, QPainterPath, QPen
+from PySide6.QtGui import QColor, QFont, QFontMetricsF, QKeySequence, QPainter, QPainterPath, QPen, QShortcut
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDoubleSpinBox, QFormLayout, QFrame, QGroupBox, QHBoxLayout, QLabel, QPlainTextEdit,
     QPushButton, QScrollArea, QSlider, QVBoxLayout, QWidget,
 )
 
-from cpb_core.balloons import KINDS, Balloon, BalloonFont, Tail, fit_balloon, outline_path
+from cpb_core.balloons import KINDS, Balloon, BalloonFont, Tail, fit_balloon, outline_path, tail_base_point
 from cpb_core.balloons.text import layout_lines
 from cpb_core.lettering import ROLES, cap_height_mm, recommend_pt, verdict
 from cpb_core.model import Page
@@ -45,6 +49,7 @@ ROLE_LABELS = {"dialogue": "Dialogue", "caption": "Caption", "whisper": "Whisper
 DEFAULT_ROLE = {"speech": "dialogue", "thought": "dialogue", "shout": "dialogue", "whisper": "whisper", "caption": "caption"}
 HANDLE = 4.0          # handle half-size in screen pixels
 NUDGE, BIG_NUDGE = 0.5, 5.0   # mm
+ZOOM_MIN, ZOOM_MAX, ZOOM_STEP = 0.5, 12.0, 1.25   # zoom 1 = the whole page fits
 FILLS = (("White", "#ffffff"), ("None", None), ("Pale yellow", "#fff8d6"))
 
 _REF_PX = 100.0  # fonts are measured and drawn at 100 px, then scaled: Qt rounds tiny pixel sizes
@@ -97,16 +102,9 @@ def fitted(b: Balloon) -> Balloon:
 
 
 def rim_point(b: Balloon) -> QPointF | None:
-    """Where the tail leaves the body (the blue rim handle)."""
-    if not b.has_tail:
-        return None
-    t = b.tail
-    if t.base_angle is None:
-        ang = math.atan2((t.tip_y - b.cy) / b.ry, (t.tip_x - b.cx) / b.rx)
-    else:
-        a = math.radians(t.base_angle)
-        ang = math.atan2(b.rx * math.sin(a), b.ry * math.cos(a))
-    return QPointF(b.cx + b.rx * math.cos(ang), b.cy + b.ry * math.sin(ang))
+    """Where the tail leaves the body (the blue rim handle): the core's answer, so it matches the drawing."""
+    pt = tail_base_point(b) if b.has_tail else None
+    return None if pt is None else QPointF(*pt)
 
 
 class BalloonCanvas(QWidget):
@@ -115,6 +113,8 @@ class BalloonCanvas(QWidget):
     edited = Signal(object)        # a Balloon that changed
     selected_changed = Signal(object)   # a balloon number, or None
     delete_requested = Signal()
+    gesture_started = Signal()     # a press on a balloon: what follows is one undo step
+    zoom_changed = Signal(float)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -130,9 +130,15 @@ class BalloonCanvas(QWidget):
         self.part = "body"   # what the keyboard moves: "body" or "tail"
         self._renderer: QSvgRenderer | None = None
         self._drag: tuple | None = None
+        self.zoom = 1.0
+        self.pan = QPointF(0, 0)        # screen px, added to the centred position
+        self._panning: QPointF | None = None
+        self._space = False
 
     # ---------- data ----------
     def set_page(self, page: Page | None, folder: str | None = None) -> None:
+        if page is None or self.page is None or page.number != getattr(self.page, "number", None):
+            self.fit()  # a new page starts whole
         self.page, self.folder = page, folder
         # Panels and guides come from page.svg; balloons are drawn here instead (with handles).
         self._renderer = QSvgRenderer(QByteArray(page_svg(replace(page, balloons=()), paper=False).encode())) if page else None
@@ -148,8 +154,43 @@ class BalloonCanvas(QWidget):
     # ---------- page mm <-> screen ----------
     def _frame(self) -> tuple[float, float, float]:
         s = self.page.size
-        scale = min((self.width() - 36) / s.canvas_w, (self.height() - 36) / s.canvas_h)
-        return (self.width() - s.canvas_w * scale) / 2, (self.height() - s.canvas_h * scale) / 2, scale
+        scale = min((self.width() - 36) / s.canvas_w, (self.height() - 36) / s.canvas_h) * self.zoom
+        return ((self.width() - s.canvas_w * scale) / 2 + self.pan.x(),
+                (self.height() - s.canvas_h * scale) / 2 + self.pan.y(), scale)
+
+    # ---------- zoom and pan ----------
+    def fit(self) -> None:
+        self.zoom, self.pan = 1.0, QPointF(0, 0)
+        self.zoom_changed.emit(self.zoom)
+        self.update()
+
+    def zoom_to(self, zoom: float, around: QPointF | None = None) -> None:
+        """Zoom keeping the page point under `around` (screen px; default: the middle) where it is."""
+        if not self.page:
+            return
+        around = around if around is not None else QPointF(self.width() / 2, self.height() / 2)
+        held = self.to_mm(around)
+        self.zoom = max(ZOOM_MIN, min(ZOOM_MAX, zoom))
+        self.pan += around - self.to_px(held)
+        self.zoom_changed.emit(self.zoom)
+        self.update()
+
+    def wheelEvent(self, e) -> None:
+        if not self.page:
+            return
+        dy = e.angleDelta().y()
+        if e.modifiers() & Qt.ControlModifier:
+            self.zoom_to(self.zoom * ZOOM_STEP ** (dy / 120), e.position())
+        elif e.modifiers() & Qt.ShiftModifier:
+            self.pan += QPointF(dy / 2, 0); self.update()
+        else:
+            self.pan += QPointF(e.angleDelta().x() / 2, dy / 2); self.update()
+
+    def keyReleaseEvent(self, e) -> None:
+        if e.key() == Qt.Key_Space and not e.isAutoRepeat():
+            self._space = False
+            self.setCursor(Qt.ArrowCursor)
+        super().keyReleaseEvent(e)
 
     def to_mm(self, pos: QPointF) -> QPointF:
         x0, y0, k = self._frame()
@@ -226,7 +267,13 @@ class BalloonCanvas(QWidget):
         return None, None
 
     def mousePressEvent(self, e) -> None:
-        if not self.page or e.button() != Qt.LeftButton:
+        if not self.page:
+            return
+        if e.button() == Qt.MiddleButton or (e.button() == Qt.LeftButton and self._space):
+            self._panning = e.position()
+            self.setCursor(Qt.ClosedHandCursor)
+            return
+        if e.button() != Qt.LeftButton:
             return
         self.setFocus()
         number, part = self._hit(e.position())
@@ -238,10 +285,19 @@ class BalloonCanvas(QWidget):
         else:
             self.part = "tail" if part in ("rim", "tip") else "body"
             self._drag = (part, self.to_mm(e.position()), self.current())
+            self.gesture_started.emit()
         self.update()
 
     def mouseMoveEvent(self, e) -> None:
+        if self._panning is not None:
+            self.pan += e.position() - self._panning
+            self._panning = e.position()
+            self.update()
+            return
         if not self._drag:
+            if self._space:
+                self.setCursor(Qt.OpenHandCursor)
+                return
             number, part = self._hit(e.position()) if self.page else (None, None)
             self.setCursor({None: Qt.ArrowCursor, "body": Qt.SizeAllCursor, "rim": Qt.PointingHandCursor,
                             "tip": Qt.CrossCursor}.get(part, Qt.SizeFDiagCursor))
@@ -263,16 +319,33 @@ class BalloonCanvas(QWidget):
 
     def mouseReleaseEvent(self, _e) -> None:
         self._drag = None
+        if self._panning is not None:
+            self._panning = None
+            self.setCursor(Qt.OpenHandCursor if self._space else Qt.ArrowCursor)
 
     # ---------- keyboard ----------
     def focusNextPrevChild(self, _next: bool) -> bool:
         return False  # Tab belongs to the canvas: it switches body / tail
 
+    nudged = Signal(str)   # "nudge-<number>-<part>": consecutive nudges make one undo step
+
     def keyPressEvent(self, e) -> None:
+        key = e.key()
+        if key == Qt.Key_Space:
+            if not e.isAutoRepeat():
+                self._space = True
+                self.setCursor(Qt.OpenHandCursor)
+            return
+        if e.modifiers() & Qt.ControlModifier and self.page:
+            if key == Qt.Key_0:
+                self.fit(); return
+            if key in (Qt.Key_Plus, Qt.Key_Equal):
+                self.zoom_to(self.zoom * ZOOM_STEP); return
+            if key == Qt.Key_Minus:
+                self.zoom_to(self.zoom / ZOOM_STEP); return
         b = self.current()
         if b is None:
             return super().keyPressEvent(e)
-        key = e.key()
         if key in (Qt.Key_Tab, Qt.Key_Backtab):
             self.part = "tail" if self.part == "body" and b.has_tail else "body"
             self.update()
@@ -285,6 +358,7 @@ class BalloonCanvas(QWidget):
         if key not in moves:
             return super().keyPressEvent(e)
         dx, dy = moves[key]
+        self.nudged.emit(f"nudge-{b.number}-{self.part}")
         if self.part == "tail" and b.has_tail:
             self.edited.emit(replace(b, tail=replace(b.tail, tip_x=b.tail.tip_x + dx, tip_y=b.tail.tip_y + dy)))
         else:
@@ -334,6 +408,13 @@ class BalloonsView(QWidget):
         self.balloons: list[Balloon] = []
         self.edited_elsewhere: list[int] = []
         self._loading = False
+        # Undo: snapshots of (balloons, selected number). Edits that share a
+        # key in a row (one drag, one stretch of typing) make a single step.
+        self.undo_stack: list[tuple] = []
+        self.redo_stack: list[tuple] = []
+        self._last_key: str | None = None
+        self._gesture = 0
+        self._nudge_key: str | None = None
 
         lay = QHBoxLayout(self); lay.setContentsMargins(0, 0, 0, 0); lay.setSpacing(0)
         self.canvas = BalloonCanvas()
@@ -342,6 +423,20 @@ class BalloonsView(QWidget):
         props = QWidget(); pl = QVBoxLayout(props); pl.setContentsMargins(12, 8, 12, 12)
         side.setWidget(props)
         lay.addWidget(side)
+
+        tools = QHBoxLayout(); tools.setSpacing(6)
+        self.undo_btn = QPushButton("Undo"); self.redo_btn = QPushButton("Redo")
+        self.fit_page_btn = QPushButton("Fit page")
+        self.zoom_label = QLabel("100%"); self.zoom_label.setObjectName("Hint")
+        self.undo_btn.setToolTip("Ctrl+Z"); self.redo_btn.setToolTip("Ctrl+Y")
+        self.fit_page_btn.setToolTip("Ctrl+0. Ctrl+wheel zooms, the wheel or a middle-drag pans.")
+        for w in (self.undo_btn, self.redo_btn, self.fit_page_btn):
+            # Compact: the theme's 60 px minimum and wide padding would push the
+            # side panel past its 300 px and clip every field below.
+            w.setStyleSheet("min-width: 0; padding: 3px 9px;")
+            tools.addWidget(w)
+        tools.addWidget(self.zoom_label); tools.addStretch()
+        pl.addLayout(tools)
 
         self.empty_hint = QLabel("Add a balloon from the command bar, then drag it into place.\n\n"
                                  "Pink corners resize the body. Blue handles move the tail: "
@@ -389,21 +484,29 @@ class BalloonsView(QWidget):
         pl.addStretch()
         self.groups = (body, tail, style)
 
-        self.canvas.edited.connect(self._replace)
+        self.canvas.edited.connect(self._canvas_edited)
+        self.canvas.gesture_started.connect(self._start_gesture)
+        self.canvas.nudged.connect(self._set_nudge_key)
+        self.canvas.zoom_changed.connect(lambda z: self.zoom_label.setText(f"{round(z * 100)}%"))
+        self.undo_btn.clicked.connect(self.undo); self.redo_btn.clicked.connect(self.redo)
+        self.fit_page_btn.clicked.connect(self.canvas.fit)
+        QShortcut(QKeySequence.Undo, self, self.undo)
+        QShortcut(QKeySequence.Redo, self, self.redo)
+        self.undo_btn.setEnabled(False); self.redo_btn.setEnabled(False)
         self.canvas.selected_changed.connect(lambda _n: self._show_selected())
         self.canvas.delete_requested.connect(self.delete_selected)
-        self.kind.currentIndexChanged.connect(lambda _: self._field_changed())
+        self.kind.currentIndexChanged.connect(lambda _: self._field_changed("kind"))
         self.role.currentIndexChanged.connect(lambda _: self._role_changed())
-        self.text.textChanged.connect(self._field_changed)
-        self.auto.toggled.connect(lambda _: self._field_changed())
+        self.text.textChanged.connect(lambda: self._field_changed("text"))
+        self.auto.toggled.connect(lambda _: self._field_changed("auto"))
         self.fit_btn.clicked.connect(self.fit_to_text)
         self.has_tail.toggled.connect(lambda _: self._tail_toggled())
-        self.base_width.valueChanged.connect(lambda _: self._field_changed())
-        self.bend.valueChanged.connect(lambda _: self._field_changed())
-        self.follows.toggled.connect(lambda _: self._field_changed())
+        self.base_width.valueChanged.connect(lambda _: self._field_changed("width"))
+        self.bend.valueChanged.connect(lambda _: self._field_changed("bend"))
+        self.follows.toggled.connect(lambda _: self._field_changed("follows"))
         self.aim.clicked.connect(self._aim)
-        self.stroke_w.valueChanged.connect(lambda _: self._field_changed())
-        self.fill.currentIndexChanged.connect(lambda _: self._field_changed())
+        self.stroke_w.valueChanged.connect(lambda _: self._field_changed("stroke"))
+        self.fill.currentIndexChanged.connect(lambda _: self._field_changed("fill"))
         self._show_selected()
 
     # ---------- loading and saving ----------
@@ -414,6 +517,8 @@ class BalloonsView(QWidget):
         self.saved = tuple(doc.page.balloons or ())
         self.balloons = list(self.saved)
         self.edited_elsewhere = doc.edited_balloons
+        self.undo_stack, self.redo_stack, self._last_key = [], [], None
+        self.undo_btn.setEnabled(False); self.redo_btn.setEnabled(False)
         self.canvas.set_page(doc.page, os.path.dirname(project.page_path(number)))
         self.canvas.set_balloons(self.balloons, self.balloons[0].number if self.balloons else None)
         self._show_selected()
@@ -447,6 +552,7 @@ class BalloonsView(QWidget):
         if at is None:
             live = self.page.geometry().live
             at = QPointF(live.x + live.w / 2, live.y + live.h / 4)
+        self._remember(None)
         tail = None if kind == "caption" else Tail(tip_x=round(at.x() - 8, 3), tip_y=round(at.y() + 30, 3))
         text = {"caption": "Meanwhile...", "shout": "HEY!", "thought": "Hmm...", "whisper": "psst..."}.get(kind, "Type here")
         b = fitted(Balloon(number=next_number(self.balloons), kind=kind, cx=round(at.x(), 3), cy=round(at.y(), 3),
@@ -461,6 +567,7 @@ class BalloonsView(QWidget):
         b = self.selected()
         if b is None:
             return
+        self._remember(None)
         i = self.balloons.index(b)
         del self.balloons[i]
         nxt = self.balloons[min(i, len(self.balloons) - 1)].number if self.balloons else None
@@ -472,12 +579,53 @@ class BalloonsView(QWidget):
         if b is not None:
             self._replace(fitted(replace(b, auto_size=True)))
 
-    def _replace(self, b: Balloon) -> None:
+    # ---------- undo ----------
+    def _remember(self, key: str | None) -> None:
+        """Save the state before an edit, unless it continues the last one (same key)."""
+        if key is not None and key == self._last_key:
+            return
+        self.undo_stack.append((tuple(self.balloons), self.canvas.selected))
+        del self.undo_stack[:-200]   # plenty, and bounded
+        self.redo_stack.clear()
+        self._last_key = key
+
+    def _start_gesture(self) -> None:
+        self._gesture += 1
+
+    def _set_nudge_key(self, key: str) -> None:
+        self._nudge_key = key
+
+    def _canvas_edited(self, b: Balloon) -> None:
+        key, self._nudge_key = (self._nudge_key or f"drag-{self._gesture}"), None
+        self._replace(b, key)
+
+    def _restore(self, state: tuple) -> None:
+        balloons, selected = state
+        self.balloons = list(balloons)
+        self.canvas.set_balloons(self.balloons, selected if any(b.number == selected for b in balloons) else None)
+        self._last_key = None
+        self._after_edit()
+
+    def undo(self) -> None:
+        if self.undo_stack:
+            self.redo_stack.append((tuple(self.balloons), self.canvas.selected))
+            self._restore(self.undo_stack.pop())
+
+    def redo(self) -> None:
+        if self.redo_stack:
+            self.undo_stack.append((tuple(self.balloons), self.canvas.selected))
+            self._restore(self.redo_stack.pop())
+
+    def _replace(self, b: Balloon, key: str | None = None) -> None:
+        if b == self.selected():
+            return  # nothing changed (a click without a drag, say): no undo step
+        self._remember(key)
         self.balloons = [b if x.number == b.number else x for x in self.balloons]
         self.canvas.set_balloons(self.balloons, b.number)
         self._after_edit()
 
     def _after_edit(self) -> None:
+        self.undo_btn.setEnabled(bool(self.undo_stack)); self.redo_btn.setEnabled(bool(self.redo_stack))
         self._show_selected()
         self.dirty_changed.emit(self.dirty)
 
@@ -519,7 +667,7 @@ class BalloonsView(QWidget):
         self.size_verdict.style().unpolish(self.size_verdict); self.size_verdict.style().polish(self.size_verdict)
         self.status_changed.emit()
 
-    def _field_changed(self) -> None:
+    def _field_changed(self, field: str = "field") -> None:
         b = self.selected()
         if self._loading or b is None:
             return
@@ -530,7 +678,7 @@ class BalloonsView(QWidget):
                            tip_follows_body=self.follows.isChecked())
         new = replace(b, kind=kind, text=self.text.toPlainText(), auto_size=self.auto.isChecked(), tail=tail,
                       stroke_width=self.stroke_w.value(), fill=self.fill.currentData())
-        self._replace(fitted(new))
+        self._replace(fitted(new), f"{field}-{b.number}")
 
     def _role_changed(self) -> None:
         b = self.selected()

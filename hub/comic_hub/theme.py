@@ -75,6 +75,13 @@ QMainWindow::separator {{ width: 0; height: 0; }}
 #CommandBar QToolButton:hover {{ border-color: {SELECT_BORDER}; background: {SELECT}; }}
 #CommandBar QToolButton:pressed, #CommandBar QToolButton:checked {{ border-color: {BORDER}; background: {BUTTON_DOWN}; }}
 #CommandBar QToolButton[primary="true"] {{ font-weight: 600; }}
+/* Split buttons (Add balloon): without rules for the arrow half, Qt paints it
+   solid black while its menu is open. */
+#CommandBar QToolButton[popupMode="1"] {{ padding-right: 20px; }}
+#CommandBar QToolButton::menu-button {{ width: 16px; border: 1px solid transparent; border-top-right-radius: 3px; border-bottom-right-radius: 3px; background: transparent; }}
+#CommandBar QToolButton:hover::menu-button {{ border-left-color: {SELECT_BORDER}; }}
+#CommandBar QToolButton::menu-button:pressed, #CommandBar QToolButton::menu-button:open {{ border-color: {BORDER}; background: {BUTTON_DOWN}; }}
+#CommandBar QToolButton::menu-arrow {{ image: url("{ASSETS}/arrow-down.svg"); width: 8px; height: 5px; }}
 
 /* navigation pane */
 #NavPane {{ show-decoration-selected: 0; background: {PANE_ALT}; border: 0; border-right: 1px solid {BORDER_SOFT}; padding: 8px 4px; outline: 0; }}

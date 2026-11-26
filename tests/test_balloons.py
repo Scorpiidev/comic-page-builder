@@ -43,8 +43,28 @@ def test_body_and_tail_are_one_closed_path_through_the_tip(kind):
 
 
 def test_thought_tail_is_a_trail_of_bubbles_ending_at_the_tip():
-    d = outline_path(speech(kind="thought"))
-    assert subpaths(d) == 4  # the cloud plus three bubbles
+    d = outline_path(speech(kind="thought", tail=Tail(tip_x=66, tip_y=72)))
+    assert subpaths(d) >= 3  # the cloud plus at least two bubbles (more for longer tails)
+
+
+def test_longer_thought_tails_get_more_bubbles_not_wider_gaps():
+    counts = [subpaths(outline_path(speech(kind="thought", tail=Tail(tip_x=60, tip_y=y)))) - 1 for y in (70, 90, 130, 400)]
+    assert counts == sorted(counts) and counts[0] >= 2 and counts[-1] == 8
+    assert counts[1] < counts[2]
+
+
+def test_a_hand_placed_base_swings_round_when_the_body_moves_past_the_tip():
+    from cpb_core.balloons import tail_base_point
+    # Base dragged to the bottom of the body, tip below: fine as it is.
+    b = speech(tail=Tail(tip_x=60, tip_y=85, base_angle=100))
+    x, y = tail_base_point(b)
+    assert y > 50 + 11  # on the bottom of the rim, where it was put
+    # Move the body below the tip (tip left behind): the tail would cross the
+    # body and the text, so the base comes round to the top.
+    moved = b.moved(0, 60)
+    x, y = tail_base_point(moved)
+    assert y < moved.cy  # now on the top half, facing the tip
+    assert moved.tail.base_angle == 100  # your setting is kept for when the body comes back
 
 
 def test_a_tip_inside_the_body_draws_no_tail():

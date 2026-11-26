@@ -161,8 +161,17 @@ Photoshop, Illustrator and Krita. The plan and every decision live in
     art as an embedded smart object (old art kept hidden on change),
     Illustrator keeps it linked on a locked Art layer and fixes its
     position (it came in 3 mm off). Details in `importers/M2_RESULTS.md`.
-  - Next: nice to have: zoom on the balloon canvas, undo. Then M4's test
-    print and M6 (Krita).
+  - **Balloons screen polish 2026-11-26** (Ivón's feedback): zoom (Ctrl+wheel
+    around the cursor, Ctrl+0 fits, wheel/middle-drag/Space pans) and undo
+    (a drag, a stretch of typing or a run of nudges is one step); a dragged
+    tail base swings toward the tip when the body moves past it (core:
+    `tail_base_point`, also used for the rim handle); thought trails get 2–8
+    bubbles by length; the Add balloon split button's arrow no longer turns
+    black.
+  - Ideas from Ivón to plan, not built: balloons pre-filled from her comic
+    script (fits M7's script link), and lettering drawn pages in the hub
+    (already possible via D7; she may not have known).
+  - Next: M4's test print and M6 (Krita), or M7 if the script idea goes first.
 
 The previous work was done in a cloud session that can't reach this PC's
 apps. That's why you're here.

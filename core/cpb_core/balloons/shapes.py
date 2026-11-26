@@ -91,10 +91,53 @@ def _tail_base(e: _Ellipse, b: Balloon) -> Optional[tuple[float, float]]:
     # A tip inside (or right on) the body would fold the tail back over the balloon.
     if e.inside(tail.tip_x, tail.tip_y, 1.05):
         return None
-    t0 = e.param_towards(tail.tip_x, tail.tip_y) if tail.base_angle is None else e.param_of_direction(tail.base_angle)
+    aim = e.param_towards(tail.tip_x, tail.tip_y)
+    t0 = aim if tail.base_angle is None else _clear_of_body(e, e.param_of_direction(tail.base_angle), aim, tail)
     speed = math.hypot(*e.tangent(t0)) or 1.0  # mm of rim per radian here
     half = min(0.6, tail.base_width / 2 / speed)
     return t0, half
+
+
+# How squarely the tail has to leave the rim: the cosine of the largest angle
+# between the rim's outward normal and the line to the tip (about 72 degrees).
+# Past that, the tail would run back across the body and over the text.
+MIN_FACING = 0.3
+# Once it has to move, it comes round until it faces the tip properly
+# (about 40 degrees off), not just barely, which looked like a sprain.
+GOOD_FACING = 0.75
+
+
+def _facing(e: _Ellipse, t: float, tip: Point) -> float:
+    x, y = e.at(t)
+    dx, dy = tip[0] - x, tip[1] - y
+    length = math.hypot(dx, dy) or 1.0
+    nx, ny = e.normal(t)
+    return (nx * dx + ny * dy) / length
+
+
+def _clear_of_body(e: _Ellipse, t: float, aim: float, tail) -> float:
+    """
+    A base you placed by hand stays where you put it, unless moving the body
+    (with the tip left behind) would make the tail cut back across it. Then
+    the base swings toward the tip, only as far as it has to.
+    """
+    tip = (tail.tip_x, tail.tip_y)
+    if _facing(e, t, tip) >= MIN_FACING:
+        return t
+    diff = (aim - t + math.pi) % TWO_PI - math.pi   # the short way round, -pi..pi
+    steps = 48
+    for i in range(1, steps + 1):
+        s = t + diff * i / steps
+        if _facing(e, s, tip) >= GOOD_FACING:
+            return s
+    return aim
+
+
+def tail_base_point(b: Balloon) -> Optional[Point]:
+    """Where the tail leaves the body, as drawn (the hub's rim handle sits here), or None."""
+    e = _Ellipse(b.cx, b.cy, b.rx, b.ry)
+    base = _tail_base(e, b)
+    return None if base is None else e.at(base[0])
 
 
 def _bent_side(start: Point, tip: Point, bend: float, sideways: Point) -> str:
@@ -154,8 +197,12 @@ def _thought(b: Balloon) -> str:
         rim = e.at(t0)
         side = _sideways(rim, tip)
         length = math.hypot(tip[0] - rim[0], tip[1] - rim[1])
-        big = min(3.0, 0.2 * min(b.rx, b.ry), length / 4)
-        sizes = [big, big * 0.62, max(0.6, big * 0.38)]
+        # Never so small the bubbles turn into specks next to a small cloud.
+        big = min(3.0, max(1.2, 0.2 * min(b.rx, b.ry)), length / 4)
+        # Longer tails get more bubbles, not wider gaps: about one bubble per
+        # 3.5 of the biggest one's diameters, from 2 to 8, shrinking to the tip.
+        count = max(2, min(8, round(length / (big * 3.5))))
+        sizes = [max(0.6, big * 0.38 ** (i / (count - 1))) for i in range(count)]
         for i, r in enumerate(sizes):
             f = (i + 1) / len(sizes)  # 1/3, 2/3, 1: the last bubble sits on the tip
             push = math.sin(f * math.pi) * b.tail.bend * length * 0.3

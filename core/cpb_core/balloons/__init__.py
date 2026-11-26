@@ -15,8 +15,8 @@ file than the standard-library reader in lettering/fonts.py looks at.
 """
 
 from .model import KINDS, Balloon, BalloonFont, Tail
-from .shapes import outline_path
+from .shapes import outline_path, tail_base_point
 from .text import TextBlock, approx_measure, fit_balloon, layout_lines, wrap
 
-__all__ = ["KINDS", "Balloon", "BalloonFont", "Tail", "outline_path",
+__all__ = ["KINDS", "Balloon", "BalloonFont", "Tail", "outline_path", "tail_base_point",
            "TextBlock", "approx_measure", "fit_balloon", "layout_lines", "wrap"]
