@@ -17,7 +17,9 @@ pytest.importorskip("PySide6.QtWidgets")
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "hub"))
 
-from PySide6.QtCore import QLocale, QSettings  # noqa: E402
+import gc  # noqa: E402
+
+from PySide6.QtCore import QCoreApplication, QEvent, QLocale, QSettings  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from comic_hub import theme  # noqa: E402
@@ -30,11 +32,24 @@ from cpb_core.project import create_project, load_project  # noqa: E402
 from cpb_core.svg import read_page  # noqa: E402
 
 
+def _dispose(w):
+    """Close a top-level widget and delete it now, while the QApplication is alive.
+
+    Left to Python's shutdown, windows and the app are torn down in no fixed
+    order, and Qt sometimes crashes (exit code 139) after every test passed.
+    """
+    w.close()
+    w.deleteLater()
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+
+
 @pytest.fixture(scope="module")
 def app():
     a = QApplication.instance() or QApplication([])
     theme.apply(a)
-    return a
+    yield a
+    gc.collect()
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
 
 
 @pytest.fixture
@@ -49,7 +64,7 @@ def window(app, tmp_path):
     yield w
     w.builder.saved = w.builder.draft  # nothing to ask about on close
     w.balloons_view.saved = tuple(w.balloons_view.balloons)
-    w.close()
+    _dispose(w)
 
 
 # ---------- balloons (M5) ----------
@@ -362,6 +377,7 @@ def test_window_starts_inside_the_screen(app, tmp_path):
     area = w.screen().availableGeometry()
     assert w.height() <= area.height()
     assert w.frameGeometry().top() >= area.top()
+    _dispose(w)
 
 
 def test_opening_a_project_shows_its_pages(window):
@@ -442,7 +458,7 @@ def test_recent_projects_and_reopen(window, app, tmp_path):
     assert window.recent() == [window.project.folder]
     again = MainWindow(QSettings(str(tmp_path / "settings.ini"), QSettings.IniFormat))
     assert again.project is not None and again.project.name == "My Comic"
-    again.close()
+    _dispose(again)
 
 
 def test_back_and_forward(window):
